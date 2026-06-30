@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from ..models.enums import PrTypeEnum, SetStatusEnum, UnitEnum
+from ..models.prs import PR
+from ..models.sessions import SetEntry, WorkoutSession
+from .one_rm import estimated_1rm
+from .units import to_lbs, total_load
+
+
+def detect_and_record_prs(db: Session, client_id: int, new_set: SetEntry) -> list[PR]:
+    """Check a just-logged set against the client's history for this exercise and
+    record any PRs hit. Mutates new_set.is_pr / new_set.pr_type in place.
+
+    Two PR types, per the spec: best weight at a given rep count, or best
+    estimated 1RM (Epley). A set with no weight (bodyweight/banded) can't PR
+    against either metric and is skipped.
+    """
+    if new_set.weight is None or new_set.status != SetStatusEnum.completed or not new_set.reps:
+        return []
+
+    new_load_lbs = to_lbs(total_load(new_set.weight, new_set.is_per_side), new_set.weight_unit or UnitEnum.lbs)
+    prs: list[PR] = []
+
+    prior_sets = (
+        db.query(SetEntry)
+        .join(WorkoutSession, SetEntry.session_id == WorkoutSession.id)
+        .filter(
+            WorkoutSession.client_id == client_id,
+            SetEntry.exercise_id == new_set.exercise_id,
+            SetEntry.status == SetStatusEnum.completed,
+            SetEntry.weight.isnot(None),
+            SetEntry.id != new_set.id,
+        )
+        .all()
+    )
+
+    # Weight-at-reps PR: heaviest load ever logged at this exact rep count.
+    same_rep_loads = [
+        to_lbs(total_load(s.weight, s.is_per_side), s.weight_unit or UnitEnum.lbs)
+        for s in prior_sets
+        if s.reps == new_set.reps
+    ]
+    best_same_rep = max(same_rep_loads, default=None)
+    is_weight_pr = best_same_rep is None or new_load_lbs > best_same_rep
+
+    # Estimated 1RM PR: highest Epley-estimated 1RM ever for this exercise.
+    prior_1rms = [
+        estimated_1rm(to_lbs(total_load(s.weight, s.is_per_side), s.weight_unit or UnitEnum.lbs), s.reps)
+        for s in prior_sets
+        if s.reps
+    ]
+    new_1rm = estimated_1rm(new_load_lbs, new_set.reps)
+    best_prior_1rm = max(prior_1rms, default=None)
+    is_1rm_pr = best_prior_1rm is None or new_1rm > best_prior_1rm
+
+    now = datetime.now(timezone.utc)
+    unit = new_set.weight_unit or UnitEnum.lbs
+
+    if is_weight_pr:
+        prs.append(
+            PR(
+                client_id=client_id,
+                exercise_id=new_set.exercise_id,
+                set_id=new_set.id,
+                pr_type=PrTypeEnum.weight_at_reps,
+                reps=new_set.reps,
+                value=new_set.weight,
+                unit=unit,
+                achieved_at=now,
+            )
+        )
+    if is_1rm_pr:
+        prs.append(
+            PR(
+                client_id=client_id,
+                exercise_id=new_set.exercise_id,
+                set_id=new_set.id,
+                pr_type=PrTypeEnum.estimated_1rm,
+                reps=new_set.reps,
+                value=new_1rm,
+                unit=unit,
+                achieved_at=now,
+            )
+        )
+
+    if prs:
+        new_set.is_pr = True
+        # Prefer 1RM as the headline PR type shown on the set itself when both qualify.
+        new_set.pr_type = PrTypeEnum.estimated_1rm if is_1rm_pr else PrTypeEnum.weight_at_reps
+        db.add_all(prs)
+
+    return prs

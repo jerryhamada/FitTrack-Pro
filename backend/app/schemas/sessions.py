@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+from ..models.enums import EffortTypeEnum, PrTypeEnum, SetStatusEnum, UnitEnum
+
+
+class SessionStart(BaseModel):
+    client_id: int
+    client_program_day_id: int | None = None
+    label: str | None = None
+
+
+class SessionUpdate(BaseModel):
+    label: str | None = None
+    notes: str | None = None
+    ended_at: datetime | None = None
+
+
+class SetCreate(BaseModel):
+    exercise_id: int
+    order_index: int = 0
+    weight: float | None = None
+    weight_unit: UnitEnum | None = None
+    is_per_side: bool = False
+    reps: int | None = None
+    effort_value: float | None = None
+    effort_type: EffortTypeEnum | None = None
+    set_modifier: str | None = None
+    status: SetStatusEnum = SetStatusEnum.completed
+    superset_group: str | None = None
+
+
+class SetUpdate(BaseModel):
+    weight: float | None = None
+    weight_unit: UnitEnum | None = None
+    is_per_side: bool | None = None
+    reps: int | None = None
+    effort_value: float | None = None
+    effort_type: EffortTypeEnum | None = None
+    set_modifier: str | None = None
+    status: SetStatusEnum | None = None
+    superset_group: str | None = None
+
+
+class SetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int
+    exercise_id: int
+    exercise_name: str = ""
+    order_index: int
+    set_number: int
+    weight: float | None
+    weight_unit: UnitEnum | None
+    is_per_side: bool
+    reps: int | None
+    effort_value: float | None
+    effort_type: EffortTypeEnum | None
+    set_modifier: str | None
+    status: SetStatusEnum
+    superset_group: str | None
+    is_pr: bool
+    pr_type: PrTypeEnum | None
+    created_at: datetime
+
+
+class SessionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    client_id: int
+    client_program_day_id: int | None
+    label: str | None
+    started_at: datetime
+    ended_at: datetime | None
+    duration_seconds: int | None
+    notes: str | None
+    sets: list[SetOut]
+
+
+class SessionListItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str | None
+    started_at: datetime
+    ended_at: datetime | None
+    duration_seconds: int | None
+    set_count: int = 0
+    pr_count: int = 0
+
+
+class SessionSummaryOut(BaseModel):
+    session_id: int
+    total_volume: float
+    total_volume_unit: UnitEnum
+    total_sets: int
+    duration_seconds: int | None
+    prs_hit: list[SetOut]
