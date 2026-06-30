@@ -23,8 +23,11 @@ pip install -r requirements.txt
 cp .env.example .env   # fill in DATABASE_URL, CLERK_SECRET_KEY, CLERK_JWKS_URL
 alembic upgrade head
 python -m app.seed.seed_data
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8010
 ```
+
+Port 8010 (not 8000) is used deliberately so this can run alongside `trade-tracking-v2`'s
+backend on the same machine without a conflict.
 
 ### Frontend
 
