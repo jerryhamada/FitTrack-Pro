@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import Spinner from "../components/ui/Spinner";
 import Modal from "../components/ui/Modal";
 import Pill from "../components/ui/Pill";
+import EmptyState from "../components/ui/EmptyState";
 
 const CATEGORIES = ["Lower Body", "Upper Body — Compound Push", "Upper Body — Compound Pull"];
 
@@ -84,6 +85,17 @@ export default function ExerciseLibraryPage() {
 
       {isLoading && <Spinner />}
 
+      {!isLoading && grouped && Object.keys(grouped).length === 0 && (
+        <EmptyState
+          title="No exercises match"
+          subtitle={
+            favoritesOnly
+              ? "You haven't favorited any exercises yet — tap the star on an exercise to pin it here."
+              : "Try a different search term or category."
+          }
+        />
+      )}
+
       {grouped &&
         Object.entries(grouped).map(([sub, items]) => (
           <div key={sub} className="mb-5">
@@ -99,7 +111,7 @@ export default function ExerciseLibraryPage() {
                     {e.is_custom && <Pill>Custom</Pill>}
                     <button
                       onClick={() => toggleFavorite.mutate({ id: e.id, isFavorite: e.is_favorite })}
-                      className={`text-xl ${e.is_favorite ? "text-accent" : "text-muted"}`}
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center text-xl ${e.is_favorite ? "text-accent" : "text-muted"}`}
                       aria-label="favorite"
                     >
                       {e.is_favorite ? "★" : "☆"}

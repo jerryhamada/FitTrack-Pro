@@ -26,7 +26,8 @@ def update_me(
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(profile, field, value)
     db.commit()
-    db.refresh(trainer)
+    db.refresh(profile)
+    trainer.profile = profile
     return trainer
 
 

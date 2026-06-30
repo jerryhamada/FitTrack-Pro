@@ -47,13 +47,13 @@ export default function CalendarTab({ clientId }: { clientId: number }) {
   return (
     <div className="card">
       <div className="mb-4 flex items-center justify-between">
-        <button onClick={() => shiftMonth(-1)} className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-white">
+        <button onClick={() => shiftMonth(-1)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-white">
           <ChevronLeftIcon />
         </button>
         <span className="text-sm font-semibold text-white">
           {new Date(year, month - 1).toLocaleString(undefined, { month: "long", year: "numeric" })}
         </span>
-        <button onClick={() => shiftMonth(1)} className="rounded-lg p-1.5 text-muted hover:bg-white/5 hover:text-white">
+        <button onClick={() => shiftMonth(1)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-white/5 hover:text-white">
           <ChevronLeftIcon style={{ transform: "rotate(180deg)" }} />
         </button>
       </div>

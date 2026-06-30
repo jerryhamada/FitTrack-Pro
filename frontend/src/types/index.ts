@@ -176,6 +176,18 @@ export interface SetEntry {
   created_at: string;
 }
 
+export interface PlannedExercise {
+  exercise_id: number;
+  exercise_name: string;
+  target_sets: number | null;
+  target_reps: string | null;
+  target_weight: number | null;
+  target_weight_unit: Unit | null;
+  target_rpe: number | null;
+  target_rest_seconds: number | null;
+  notes: string | null;
+}
+
 export interface WorkoutSession {
   id: number;
   client_id: number;
@@ -186,6 +198,7 @@ export interface WorkoutSession {
   duration_seconds: number | null;
   notes: string | null;
   sets: SetEntry[];
+  planned_exercises: PlannedExercise[];
 }
 
 export interface SessionListItem {

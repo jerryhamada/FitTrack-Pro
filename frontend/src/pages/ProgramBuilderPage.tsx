@@ -158,11 +158,15 @@ export default function ProgramBuilderPage() {
                         </option>
                       ))}
                     </select>
-                    <button className="text-lg text-danger" onClick={() => removeExercise(dayIdx, exIdx)}>
+                    <button
+                      className="flex h-10 w-10 shrink-0 items-center justify-center text-xl text-danger"
+                      onClick={() => removeExercise(dayIdx, exIdx)}
+                      aria-label="Remove exercise"
+                    >
                       ×
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     <input
                       className="input-ctrl !h-10"
                       type="number"

@@ -68,6 +68,18 @@ class SetOut(BaseModel):
     created_at: datetime
 
 
+class PlannedExerciseOut(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    target_sets: int | None
+    target_reps: str | None
+    target_weight: float | None
+    target_weight_unit: UnitEnum | None
+    target_rpe: float | None
+    target_rest_seconds: int | None
+    notes: str | None
+
+
 class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -80,6 +92,7 @@ class SessionOut(BaseModel):
     duration_seconds: int | None
     notes: str | None
     sets: list[SetOut]
+    planned_exercises: list[PlannedExerciseOut] = []
 
 
 class SessionListItemOut(BaseModel):

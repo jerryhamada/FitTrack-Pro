@@ -20,7 +20,11 @@ export default function Modal({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-white">{title}</h2>
-          <button onClick={onClose} className="text-2xl leading-none text-muted hover:text-white">
+          <button
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center text-2xl leading-none text-muted hover:text-white"
+            aria-label="Close"
+          >
             ×
           </button>
         </div>

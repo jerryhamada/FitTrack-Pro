@@ -43,3 +43,15 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m app.seed.seed_data
 ```
+
+## 5. (Optional) Set up the test database
+
+The pytest suite (`backend/tests/`) runs against a separate `fittrack_pro_test` database so it
+never touches your dev data. It manages its own tables (via `Base.metadata.create_all`), so no
+migrations needed here -- just create the empty database once:
+
+```bash
+createdb fittrack_pro_test
+pip install -r requirements-dev.txt
+pytest
+```

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import type { EffortType, SetStatus, Unit } from "../types";
+import { api, ApiError } from "../lib/api";
+import type { EffortType, PlannedExercise, SetStatus, Unit } from "../types";
 import Spinner from "../components/ui/Spinner";
 import Pill from "../components/ui/Pill";
 import Stepper from "../components/ui/Stepper";
@@ -43,7 +43,21 @@ export default function SessionLogPage() {
   const favorites = useMemo(() => exercises?.filter((e) => e.is_favorite) ?? [], [exercises]);
   const selectedExercise = exercises?.find((e) => e.id === exerciseId);
 
+  function selectPlanned(plan: PlannedExercise) {
+    setExerciseId(plan.exercise_id);
+    if (plan.target_weight != null) {
+      setBodyweightOnly(false);
+      setWeight(plan.target_weight);
+      setUnit(plan.target_weight_unit ?? client?.preferred_unit ?? "lbs");
+    } else {
+      setBodyweightOnly(true);
+    }
+    const targetReps = plan.target_reps ? parseInt(plan.target_reps, 10) : NaN;
+    if (!Number.isNaN(targetReps)) setReps(targetReps);
+  }
+
   const logSet = useMutation({
+    meta: { skipGlobalToast: true },
     mutationFn: () =>
       api.sessions.logSet(id, {
         exercise_id: exerciseId as number,
@@ -65,14 +79,33 @@ export default function SessionLogPage() {
   });
 
   const deleteSet = useMutation({
+    meta: { skipGlobalToast: true },
     mutationFn: (setId: number) => api.sessions.deleteSet(setId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["session", id] }),
   });
 
   const complete = useMutation({
+    meta: { skipGlobalToast: true },
     mutationFn: () => api.sessions.complete(id),
     onSuccess: (summary) => navigate(`/sessions/${id}/summary`, { state: { summary } }),
   });
+
+  const cancelSession = useMutation({
+    meta: { skipGlobalToast: true },
+    mutationFn: () => api.sessions.cancel(id),
+    onSuccess: () => navigate(client ? `/clients/${client.id}` : "/"),
+  });
+
+  function handleFinish() {
+    if (session && session.sets.length === 0) {
+      if (!confirm("No sets have been logged yet — finish the session anyway?")) return;
+    }
+    complete.mutate();
+  }
+
+  const activeError = [logSet.error, complete.error, deleteSet.error, cancelSession.error].find(Boolean) as
+    | ApiError
+    | undefined;
 
   if (isLoading || !session) return <Spinner />;
 
@@ -90,18 +123,69 @@ export default function SessionLogPage() {
           <h1 className="text-xl font-bold text-white">{session.label ?? "Session"}</h1>
           <p className="text-sm text-muted">{client?.name}</p>
         </div>
-        <button
-          className="btn-primary !h-10 !px-4 text-sm"
-          onClick={() => complete.mutate()}
-          disabled={complete.isPending}
-        >
-          {complete.isPending ? "Finishing..." : "Finish Session"}
-        </button>
+        <div className="flex gap-2">
+          {session.sets.length === 0 && (
+            <button
+              className="btn-secondary !h-10 !px-3 text-sm"
+              onClick={() => confirm("Cancel this session? Nothing was logged.") && cancelSession.mutate()}
+              disabled={cancelSession.isPending}
+            >
+              Cancel
+            </button>
+          )}
+          <button className="btn-primary !h-10 !px-4 text-sm" onClick={handleFinish} disabled={complete.isPending}>
+            {complete.isPending ? "Finishing..." : "Finish Session"}
+          </button>
+        </div>
       </div>
+
+      {activeError && (
+        <div className="mb-4 rounded-xl border border-danger bg-danger-dim p-3 text-sm text-danger">
+          {activeError.message}
+          {activeError.isAuthError && (
+            <button className="ml-2 font-semibold underline" onClick={() => window.location.reload()}>
+              Reload
+            </button>
+          )}
+        </div>
+      )}
 
       {lastPr && (
         <div className="mb-4 rounded-xl border border-accent bg-accent-dim p-3 text-center text-sm font-bold text-accent">
           {lastPr}
+        </div>
+      )}
+
+      {session.planned_exercises.length > 0 && (
+        <div className="card mb-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Today's Plan</p>
+          <div className="flex flex-col gap-1.5">
+            {session.planned_exercises.map((plan) => {
+              const loggedCount = setsByExercise[plan.exercise_name]?.length ?? 0;
+              return (
+                <button
+                  key={plan.exercise_id}
+                  onClick={() => selectPlanned(plan)}
+                  className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-left transition-colors ${
+                    exerciseId === plan.exercise_id ? "bg-accent-dim" : "bg-bg hover:bg-white/5"
+                  }`}
+                >
+                  <div>
+                    <p className="text-sm font-medium text-white">{plan.exercise_name}</p>
+                    <p className="text-xs text-muted">
+                      {plan.target_sets ?? "?"} x {plan.target_reps ?? "?"}
+                      {plan.target_weight ? ` @ ${plan.target_weight}${plan.target_weight_unit ?? ""}` : ""}
+                    </p>
+                  </div>
+                  {plan.target_sets != null && (
+                    <Pill tone={loggedCount >= plan.target_sets ? "accent" : "default"}>
+                      {loggedCount}/{plan.target_sets} sets
+                    </Pill>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -224,7 +308,11 @@ export default function SessionLogPage() {
                   </span>
                   <div className="flex items-center gap-2">
                     {s.is_pr && <Pill tone="accent">PR</Pill>}
-                    <button className="text-muted hover:text-danger" onClick={() => deleteSet.mutate(s.id)}>
+                    <button
+                      className="flex h-10 w-10 shrink-0 items-center justify-center text-xl text-muted hover:text-danger"
+                      onClick={() => deleteSet.mutate(s.id)}
+                      aria-label="Delete set"
+                    >
                       ×
                     </button>
                   </div>

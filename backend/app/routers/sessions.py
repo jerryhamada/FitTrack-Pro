@@ -13,9 +13,11 @@ from ..models.enums import ActivityEventTypeEnum
 from ..models.exercises import Exercise
 from ..models.identity import User
 from ..models.prs import PR
+from ..models.programs import ClientProgramExercise
 from ..models.roster import Client
 from ..models.sessions import SetEntry, WorkoutSession
 from ..schemas.sessions import (
+    PlannedExerciseOut,
     SessionListItemOut,
     SessionOut,
     SessionStart,
@@ -44,6 +46,29 @@ def _session_out(db: Session, session: WorkoutSession) -> SessionOut:
     names = _exercise_name_map(db, {s.exercise_id for s in session.sets})
     for set_out, s in zip(out.sets, session.sets):
         set_out.exercise_name = names.get(s.exercise_id, "")
+
+    if session.client_program_day_id is not None:
+        planned = (
+            db.query(ClientProgramExercise)
+            .filter(ClientProgramExercise.client_program_day_id == session.client_program_day_id)
+            .order_by(ClientProgramExercise.order_index)
+            .all()
+        )
+        plan_names = _exercise_name_map(db, {p.exercise_id for p in planned})
+        out.planned_exercises = [
+            PlannedExerciseOut(
+                exercise_id=p.exercise_id,
+                exercise_name=plan_names.get(p.exercise_id, ""),
+                target_sets=p.target_sets,
+                target_reps=p.target_reps,
+                target_weight=float(p.target_weight) if p.target_weight is not None else None,
+                target_weight_unit=p.target_weight_unit,
+                target_rpe=float(p.target_rpe) if p.target_rpe is not None else None,
+                target_rest_seconds=p.target_rest_seconds,
+                notes=p.notes,
+            )
+            for p in planned
+        ]
     return out
 
 
@@ -77,6 +102,19 @@ def start_session(
     db.commit()
     db.refresh(session)
     return _session_out(db, session)
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def cancel_session(
+    session_id: int, trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)
+):
+    """Cancel an accidentally-started session. Only allowed while it has no sets logged --
+    once a set is in, use the normal complete flow rather than discarding data."""
+    session = _get_session_or_404(db, trainer.id, session_id)
+    if session.sets:
+        raise HTTPException(status_code=400, detail="Can't cancel a session that already has sets logged")
+    db.delete(session)
+    db.commit()
 
 
 @router.get("/sessions/{session_id}", response_model=SessionOut)

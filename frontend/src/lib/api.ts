@@ -31,6 +31,17 @@ export function setTokenGetter(fn: () => Promise<string | null>): void {
   _getToken = fn;
 }
 
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+  get isAuthError(): boolean {
+    return this.status === 401 || this.status === 403;
+  }
+}
+
 async function authFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const token = _getToken ? await _getToken() : null;
   return fetch(url, {
@@ -46,7 +57,10 @@ async function req<T = void>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await authFetch(`${BASE}${path}`, init);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error((err as { detail?: string }).detail ?? res.statusText);
+    const message = res.status === 401
+      ? "Your session expired — sign in again to continue."
+      : (err as { detail?: string }).detail ?? res.statusText;
+    throw new ApiError(res.status, message);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -145,6 +159,7 @@ export const api = {
     get: (id: number): Promise<WorkoutSession> => req<WorkoutSession>(`/sessions/${id}`),
     update: (id: number, body: Partial<WorkoutSession>): Promise<WorkoutSession> =>
       req<WorkoutSession>(`/sessions/${id}`, jsonBody("PUT", body)),
+    cancel: (id: number): Promise<void> => req(`/sessions/${id}`, { method: "DELETE" }),
     logSet: (sessionId: number, body: Partial<SetEntry> & { exercise_id: number }): Promise<SetEntry> =>
       req<SetEntry>(`/sessions/${sessionId}/sets`, jsonBody("POST", body)),
     updateSet: (setId: number, body: Partial<SetEntry>): Promise<SetEntry> =>

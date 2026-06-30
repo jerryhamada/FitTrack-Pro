@@ -40,6 +40,18 @@ npm run dev
 
 Frontend runs on http://localhost:5173 and proxies `/api` to the backend on :8000.
 
+## Tests
+
+```bash
+cd backend
+createdb fittrack_pro_test   # once
+pip install -r requirements-dev.txt
+pytest
+```
+
+Covers the highest-risk business logic: PR detection (mixed lb/kg, per-side dumbbells, rep-count
+ties, bodyweight sets never PR), the Epley 1RM formula, and volume calculation.
+
 ## Clerk setup
 
 1. Create a free app at https://clerk.com
