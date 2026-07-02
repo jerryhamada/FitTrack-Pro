@@ -41,6 +41,9 @@ export interface Client {
   goal_type: GoalType | null;
   training_frequency_target: number | null;
   photo_url: string | null;
+  age: number | null;
+  gender: string | null;
+  injuries_limitations: string | null;
   created_at: string;
 }
 
@@ -53,9 +56,18 @@ export interface ClientPulse extends Client {
   streak_weeks: number;
 }
 
+export type NoteCategory =
+  | "technique"
+  | "injury"
+  | "mobility"
+  | "nutrition"
+  | "homework"
+  | "preferences";
+
 export interface ClientNote {
   id: number;
   body: string;
+  category: NoteCategory | null;
   is_trainer_only: boolean;
   created_at: string;
   updated_at: string;
@@ -215,6 +227,10 @@ export interface SessionListItem {
   duration_seconds: number | null;
   set_count: number;
   pr_count: number;
+  exercise_count: number;
+  total_volume: number;
+  total_volume_unit: Unit;
+  notes_preview: string | null;
 }
 
 export interface SessionSummary {
@@ -328,4 +344,43 @@ export interface RecentPR {
   value: number;
   unit: Unit;
   achieved_at: string;
+}
+
+export interface ClientOverviewStats {
+  lifetime_workouts: number;
+  lifetime_prs: number;
+  hours_trained: number;
+  current_streak_weeks: number;
+  avg_workouts_per_week: number | null;
+  most_improved_lift: string | null;
+}
+
+export interface WeeklyStat {
+  week_start: string;
+  workouts: number;
+  volume: number;
+}
+
+export interface ClientWeeklyStats {
+  unit: Unit;
+  weeks: WeeklyStat[];
+}
+
+export interface ExercisePRSummary {
+  exercise_id: number;
+  exercise_name: string;
+  best_weight: number | null;
+  best_weight_reps: number | null;
+  best_e1rm: number | null;
+  best_set_volume: number | null;
+  pr_count: number;
+  last_pr_at: string | null;
+}
+
+export interface ClientPRSummary {
+  unit: Unit;
+  lifetime_pr_count: number;
+  prs_this_month: number;
+  last_pr_at: string | null;
+  exercises: ExercisePRSummary[];
 }

@@ -31,7 +31,7 @@ from ..services.invites import create_invite, send_invite
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
-STALE_DAYS = 10  # Hardcoded per spec; configurable later.
+STALE_DAYS = 7  # "Inactive 7+ days" — keep in sync with routers/dashboard.py
 
 
 def _week_start(now: datetime) -> datetime:
@@ -227,6 +227,27 @@ def archive_client(client_id: int, trainer: User = Depends(get_current_trainer),
     db.commit()
     db.refresh(client)
     return client
+
+
+@router.delete("/{client_id}", status_code=204)
+def delete_client(client_id: int, trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)):
+    """Hard-delete a client. Refused once workout history exists — archive instead,
+    so sessions/PRs stay available for records."""
+    client = _get_client_or_404(db, trainer.id, client_id)
+    has_sessions = (
+        db.query(WorkoutSession.id).filter(WorkoutSession.client_id == client_id).first() is not None
+    )
+    if has_sessions:
+        raise HTTPException(
+            status_code=409,
+            detail="This client has logged workouts. Archive them instead to keep their history.",
+        )
+    # Programs assigned to the client (days/exercises cascade via ORM relationships).
+    for program in db.query(ClientProgram).filter(ClientProgram.client_id == client_id).all():
+        db.delete(program)
+    db.query(ActivityEvent).filter(ActivityEvent.client_id == client_id).delete()
+    db.delete(client)  # notes + invites cascade
+    db.commit()
 
 
 @router.get("/{client_id}/notes", response_model=list[ClientNoteOut])

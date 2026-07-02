@@ -105,6 +105,10 @@ class SessionListItemOut(BaseModel):
     duration_seconds: int | None
     set_count: int = 0
     pr_count: int = 0
+    exercise_count: int = 0
+    total_volume: float = 0
+    total_volume_unit: UnitEnum = UnitEnum.lbs
+    notes_preview: str | None = None
 
 
 class SessionSummaryOut(BaseModel):

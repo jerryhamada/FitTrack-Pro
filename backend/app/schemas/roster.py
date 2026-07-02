@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from ..models.enums import ClientStatusEnum, InviteStatusEnum, UnitEnum
 
 GoalType = Literal["strength", "hypertrophy", "fat_loss", "endurance", "general_fitness"]
+NoteCategory = Literal["technique", "injury", "mobility", "nutrition", "homework", "preferences"]
 
 
 class ClientCreate(BaseModel):
@@ -18,6 +19,9 @@ class ClientCreate(BaseModel):
     goal_type: GoalType | None = None
     training_frequency_target: int | None = Field(default=None, ge=1, le=7)
     photo_url: str | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
+    gender: str | None = None
+    injuries_limitations: str | None = None
     starting_bodyweight: float | None = None
     starting_body_fat_pct: float | None = None
     preferred_unit: UnitEnum = UnitEnum.lbs
@@ -31,6 +35,9 @@ class ClientUpdate(BaseModel):
     goal_type: GoalType | None = None
     training_frequency_target: int | None = Field(default=None, ge=1, le=7)
     photo_url: str | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
+    gender: str | None = None
+    injuries_limitations: str | None = None
     starting_bodyweight: float | None = None
     starting_body_fat_pct: float | None = None
     preferred_unit: UnitEnum | None = None
@@ -47,6 +54,9 @@ class ClientOut(BaseModel):
     goal_type: str | None
     training_frequency_target: int | None
     photo_url: str | None
+    age: int | None
+    gender: str | None
+    injuries_limitations: str | None
     starting_bodyweight: float | None
     starting_body_fat_pct: float | None
     preferred_unit: UnitEnum
@@ -65,6 +75,7 @@ class ClientPulseOut(ClientOut):
 
 class ClientNoteCreate(BaseModel):
     body: str
+    category: NoteCategory | None = None
     is_trainer_only: bool = True
 
 
@@ -73,6 +84,7 @@ class ClientNoteOut(BaseModel):
 
     id: int
     body: str
+    category: str | None
     is_trainer_only: bool
     created_at: datetime
     updated_at: datetime

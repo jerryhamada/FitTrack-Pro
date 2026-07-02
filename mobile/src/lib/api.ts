@@ -5,9 +5,13 @@ import type {
   ClientBadge,
   ClientCreateResponse,
   ClientNote,
+  ClientOverviewStats,
+  ClientPRSummary,
   ClientProgram,
   ClientPulse,
+  ClientWeeklyStats,
   DashboardStats,
+  NoteCategory,
   Exercise,
   Invite,
   PR,
@@ -112,12 +116,23 @@ export const api = {
     update: (id: number, body: Partial<Client>): Promise<Client> =>
       req<Client>(`/clients/${id}`, jsonBody("PUT", body)),
     archive: (id: number): Promise<Client> => req<Client>(`/clients/${id}/archive`, { method: "POST" }),
+    delete: (id: number): Promise<void> => req(`/clients/${id}`, { method: "DELETE" }),
     notes: (id: number): Promise<ClientNote[]> => req<ClientNote[]>(`/clients/${id}/notes`),
-    addNote: (id: number, body: string, isTrainerOnly = true): Promise<ClientNote> =>
-      req<ClientNote>(`/clients/${id}/notes`, jsonBody("POST", { body, is_trainer_only: isTrainerOnly })),
+    addNote: (id: number, body: string, isTrainerOnly = true, category?: NoteCategory): Promise<ClientNote> =>
+      req<ClientNote>(
+        `/clients/${id}/notes`,
+        jsonBody("POST", { body, is_trainer_only: isTrainerOnly, category: category ?? null })
+      ),
     resendInvite: (id: number): Promise<Invite> =>
       req<Invite>(`/clients/${id}/invite/resend`, { method: "POST" }),
-    sessions: (id: number): Promise<SessionListItem[]> => req<SessionListItem[]>(`/clients/${id}/sessions`),
+    sessions: (id: number, exerciseId?: number): Promise<SessionListItem[]> =>
+      req<SessionListItem[]>(`/clients/${id}/sessions${qs({ exercise_id: exerciseId })}`),
+    overviewStats: (id: number): Promise<ClientOverviewStats> =>
+      req<ClientOverviewStats>(`/clients/${id}/overview-stats`),
+    weeklyStats: (id: number, weeks = 12): Promise<ClientWeeklyStats> =>
+      req<ClientWeeklyStats>(`/clients/${id}/weekly-stats${qs({ weeks })}`),
+    prSummary: (id: number): Promise<ClientPRSummary> =>
+      req<ClientPRSummary>(`/clients/${id}/pr-summary`),
     programs: (id: number): Promise<ClientProgram[]> => req<ClientProgram[]>(`/clients/${id}/programs`),
     progress: (id: number, exerciseId: number, metric: "1rm" | "weight"): Promise<ProgressResponse> =>
       req<ProgressResponse>(`/clients/${id}/progress${qs({ exercise_id: exerciseId, metric })}`),

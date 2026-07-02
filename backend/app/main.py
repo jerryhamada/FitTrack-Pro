@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers import (
     activity,
     calendar,
+    client_insights,
     clients,
     dashboard,
     export,
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(trainer.router)
 app.include_router(dashboard.router)
 app.include_router(clients.router)
+app.include_router(client_insights.router)
 app.include_router(exercises.router)
 app.include_router(programs.router)
 app.include_router(sessions.router)

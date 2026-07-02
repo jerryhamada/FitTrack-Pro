@@ -22,6 +22,9 @@ class Client(Base):
     goal_type: Mapped[str | None] = mapped_column(String, nullable=True)
     training_frequency_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
     photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gender: Mapped[str | None] = mapped_column(String, nullable=True)
+    injuries_limitations: Mapped[str | None] = mapped_column(Text, nullable=True)
     starting_bodyweight: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     starting_body_fat_pct: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     preferred_unit: Mapped[UnitEnum] = mapped_column(
@@ -46,6 +49,7 @@ class ClientNote(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False)
     trainer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
     is_trainer_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

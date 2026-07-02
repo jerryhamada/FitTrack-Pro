@@ -106,18 +106,26 @@ export default function SessionLogScreen() {
 
   const complete = useMutation({
     mutationFn: () => api.sessions.complete(sessionId),
-    onSuccess: (summary) =>
+    onSuccess: (summary) => {
+      // Completed sessions change roster pulse, dashboard stats, and every
+      // client-scoped insight (history, overview stats, PRs). Prefix-match all of them.
+      for (const key of ["clients", "dashboard", "client-sessions", "overview-stats", "weekly-stats", "pr-summary", "prs"]) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
       navigation.replace("SessionSummary", {
         sessionId,
         summary,
         clientId: session?.client_id,
-      }),
+      });
+    },
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
 
   const cancelSession = useMutation({
     mutationFn: () => api.sessions.cancel(sessionId),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client-sessions"] }); // drop the in-progress row from History
+      qc.invalidateQueries({ queryKey: ["clients"] });
       if (client) {
         navigation.replace("ClientProfile", { clientId: client.id });
       } else {

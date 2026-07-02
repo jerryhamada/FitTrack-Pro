@@ -255,7 +255,10 @@ def complete_session(
 
 @router.get("/clients/{client_id}/sessions", response_model=list[SessionListItemOut])
 def list_client_sessions(
-    client_id: int, trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)
+    client_id: int,
+    exercise_id: int | None = None,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
 ):
     client = db.query(Client).filter(Client.id == client_id, Client.trainer_id == trainer.id).first()
     if client is None:
@@ -267,6 +270,8 @@ def list_client_sessions(
         .order_by(WorkoutSession.started_at.desc())
         .all()
     )
+    if exercise_id is not None:
+        sessions = [s for s in sessions if any(st.exercise_id == exercise_id for st in s.sets)]
     return [
         SessionListItemOut(
             id=s.id,
@@ -276,6 +281,10 @@ def list_client_sessions(
             duration_seconds=s.duration_seconds,
             set_count=len(s.sets),
             pr_count=sum(1 for st in s.sets if st.is_pr),
+            exercise_count=len({st.exercise_id for st in s.sets}),
+            total_volume=round(session_total_volume(s.sets, client.preferred_unit), 1),
+            total_volume_unit=client.preferred_unit,
+            notes_preview=(s.notes[:80] if s.notes else None),
         )
         for s in sessions
     ]
