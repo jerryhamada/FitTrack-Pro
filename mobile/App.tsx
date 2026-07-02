@@ -5,6 +5,7 @@ import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react
 import { useEffect } from "react";
 import { Alert, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { RoleOverrideProvider } from "./src/contexts/RoleOverride";
 import { setTokenGetter, ApiError } from "./src/lib/api";
 import RootNavigator from "./src/navigation";
 import { colors } from "./src/theme";
@@ -54,11 +55,13 @@ export default function App() {
       <ClerkLoaded>
         <QueryClientProvider client={qc}>
           <SafeAreaProvider>
-            <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-            <NavigationContainer theme={NAV_THEME}>
-              <AuthSync />
-              <RootNavigator />
-            </NavigationContainer>
+            <RoleOverrideProvider>
+              <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+              <NavigationContainer theme={NAV_THEME}>
+                <AuthSync />
+                <RootNavigator />
+              </NavigationContainer>
+            </RoleOverrideProvider>
           </SafeAreaProvider>
         </QueryClientProvider>
       </ClerkLoaded>

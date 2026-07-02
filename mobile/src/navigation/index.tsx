@@ -12,13 +12,18 @@ import DashboardScreen from "../screens/DashboardScreen";
 import ExerciseLibraryScreen from "../screens/ExerciseLibraryScreen";
 import ProgramBuilderScreen from "../screens/ProgramBuilderScreen";
 import ProgramsListScreen from "../screens/ProgramsListScreen";
+import ScheduleScreen from "../screens/ScheduleScreen";
+import NotificationsScreen from "../screens/NotificationsScreen";
 import RecentPRsScreen from "../screens/RecentPRsScreen";
 import SessionLogScreen from "../screens/SessionLogScreen";
 import SessionSummaryScreen from "../screens/SessionSummaryScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import SignInScreen from "../screens/SignInScreen";
 import SignUpScreen from "../screens/SignUpScreen";
+import ClientPreviewScreen from "../screens/ClientPreviewScreen";
+import { useRoleOverride } from "../contexts/RoleOverride";
 import { DEV_BYPASS_AUTH } from "../lib/devAuth";
+import { IS_DEV_BUILD } from "../lib/env";
 import { colors } from "../theme";
 import type { AuthStackParamList, RootStackParamList, TabParamList } from "./types";
 
@@ -38,7 +43,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     Dashboard: "⊞",
     Clients: "👥",
     Exercises: "🏋",
-    Programs: "📋",
+    Schedule: "📅",
     Activity: "📈",
     Settings: "⚙",
   };
@@ -72,7 +77,7 @@ function MainTabs() {
       <Tab.Screen name="DashboardTab" component={DashboardScreen} options={{ title: "Dashboard" }} />
       <Tab.Screen name="ClientsTab" component={ClientsScreen} options={{ title: "Clients" }} />
       <Tab.Screen name="ExercisesTab" component={ExerciseLibraryScreen} options={{ title: "Exercises" }} />
-      <Tab.Screen name="ProgramsTab" component={ProgramsListScreen} options={{ title: "Programs" }} />
+      <Tab.Screen name="ScheduleTab" component={ScheduleScreen} options={{ title: "Schedule" }} />
       <Tab.Screen name="ActivityTab" component={ActivityScreen} options={{ title: "Activity" }} />
       <Tab.Screen name="SettingsTab" component={SettingsScreen} options={{ title: "Settings" }} />
     </Tab.Navigator>
@@ -113,6 +118,11 @@ function AppNavigator() {
         component={RecentPRsScreen}
         options={{ title: "Recent PRs" }}
       />
+      <RootStack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: "Notifications" }}
+      />
       <RootStack.Screen name="SessionLog" component={SessionLogScreen} options={{ title: "Session" }} />
       <RootStack.Screen
         name="SessionSummary"
@@ -135,6 +145,12 @@ function AppNavigator() {
 
 export default function RootNavigator() {
   const { isSignedIn, isLoaded } = useAuth();
+  const { override } = useRoleOverride();
+
+  // DEV ONLY: session role override from Settings → Developer Options. The provider
+  // is inert in production builds, so this branch is unreachable there.
+  if (IS_DEV_BUILD && override === "client") return <ClientPreviewScreen />;
+
   if (DEV_BYPASS_AUTH) return <AppNavigator />;
   if (!isLoaded) return null;
   return isSignedIn ? <AppNavigator /> : <AuthNavigator />;

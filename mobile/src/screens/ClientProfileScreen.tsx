@@ -34,9 +34,9 @@ function trainingPhase(programs: { name: string; start_date: string | null; acti
 export default function ClientProfileScreen() {
   const route = useRoute<Props["route"]>();
   const navigation = useNavigation<Nav>();
-  const { clientId } = route.params;
+  const { clientId, initialTab } = route.params;
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "Overview");
   const [menuOpen, setMenuOpen] = useState(false);
 
   const { data: client, isLoading } = useQuery({

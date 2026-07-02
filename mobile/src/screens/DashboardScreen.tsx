@@ -45,11 +45,18 @@ export default function DashboardScreen() {
     refetch,
     isRefetching,
   } = useQuery({ queryKey: ["dashboard", "stats"], queryFn: api.dashboard.stats });
+  const { data: unread } = useQuery({
+    queryKey: ["notifications", "unread-count"],
+    queryFn: api.notifications.unreadCount,
+    refetchInterval: 60_000,
+  });
+  const unreadCount = unread?.count ?? 0;
 
   const quickActions = [
     { label: "Start Workout", onPress: () => navigation.navigate("ClientsList", { pick: true }) },
     { label: "Add Client", onPress: () => navigation.navigate("AddClient") },
-    { label: "Programs", onPress: () => navigation.navigate("ProgramsTab") },
+    { label: "Today's Schedule", onPress: () => navigation.navigate("ScheduleTab") },
+    { label: "Programs", onPress: () => navigation.navigate("ProgramsList") },
     {
       label: "Search Clients",
       onPress: () => navigation.navigate("ClientsTab", { autoFocusSearch: true }),
@@ -95,6 +102,12 @@ export default function DashboardScreen() {
           onPress: () => navigation.navigate("RecentPRs"),
         },
         {
+          key: "upcoming",
+          label: "Upcoming (7d)",
+          value: String(stats.upcoming_sessions),
+          onPress: () => navigation.navigate("ScheduleTab"),
+        },
+        {
           key: "inactive",
           label: "Inactive 7+ days",
           value: String(stats.inactive_clients),
@@ -124,8 +137,13 @@ export default function DashboardScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("ActivityTab")}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Notifications")}>
             <Text style={styles.iconText}>🔔</Text>
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("SettingsTab")}>
             <Text style={styles.iconText}>⚙</Text>
@@ -260,6 +278,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   iconText: { fontSize: 16, color: colors.white },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: colors.bg,
+  },
+  badgeText: { color: colors.white, fontSize: 10, fontWeight: "700" },
   quickRow: {
     flexDirection: "row",
     flexWrap: "wrap",

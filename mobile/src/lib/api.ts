@@ -1,9 +1,14 @@
 import type {
   ActivityEvent,
+  ClientPortalDashboard,
+  Notification,
+  RepeatRule,
+  ScheduledSession,
   CalendarResponse,
   Client,
   ClientBadge,
   ClientCreateResponse,
+  ClientExerciseInsights,
   ClientNote,
   ClientOverviewStats,
   ClientPRSummary,
@@ -29,9 +34,36 @@ import type {
   WorkoutSession,
 } from "../types";
 
-// When running on a physical device, replace this with your Mac's local IP.
-// On simulator/emulator you can use http://localhost:8010
-export const API_BASE_URL = "http://192.168.1.242:8010";
+import Constants from "expo-constants";
+
+const BACKEND_PORT = 8010;
+// Manual override for when auto-detection can't help — e.g. a physical device on
+// cellular, where you'd point this at a tunnelled backend URL.
+const API_URL_OVERRIDE = process.env.EXPO_PUBLIC_API_URL ?? null;
+
+/**
+ * Derive the backend host from the address Metro is served on, so the app tracks
+ * the Mac's LAN IP automatically instead of a hardcoded value that breaks every
+ * time the network changes. Works on the simulator and any device on the same
+ * Wi-Fi. Falls back to localhost (fine for the simulator) if it can't be read.
+ */
+function resolveBaseUrl(): string {
+  if (API_URL_OVERRIDE) return API_URL_OVERRIDE;
+  // e.g. "172.16.227.154:8081" (LAN) or "u-xxx.exp.direct:80" (tunnel)
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig?.debuggerHost ??
+    "";
+  const host = hostUri.split(":")[0];
+  // Tunnel hosts don't forward the backend port — no LAN address to derive, so
+  // fall back to localhost and rely on EXPO_PUBLIC_API_URL for real device+tunnel.
+  if (host && !host.includes("exp.direct") && !host.includes("exp.host")) {
+    return `http://${host}:${BACKEND_PORT}`;
+  }
+  return `http://localhost:${BACKEND_PORT}`;
+}
+
+export const API_BASE_URL = resolveBaseUrl();
 
 let _getToken: (() => Promise<string | null>) | null = null;
 
@@ -133,6 +165,8 @@ export const api = {
       req<ClientWeeklyStats>(`/clients/${id}/weekly-stats${qs({ weeks })}`),
     prSummary: (id: number): Promise<ClientPRSummary> =>
       req<ClientPRSummary>(`/clients/${id}/pr-summary`),
+    exerciseInsights: (id: number): Promise<ClientExerciseInsights> =>
+      req<ClientExerciseInsights>(`/clients/${id}/exercise-insights`),
     programs: (id: number): Promise<ClientProgram[]> => req<ClientProgram[]>(`/clients/${id}/programs`),
     progress: (id: number, exerciseId: number, metric: "1rm" | "weight"): Promise<ProgressResponse> =>
       req<ProgressResponse>(`/clients/${id}/progress${qs({ exercise_id: exerciseId, metric })}`),
@@ -151,6 +185,7 @@ export const api = {
       req<Exercise>("/exercises", jsonBody("POST", body)),
     update: (id: number, body: Partial<Exercise>): Promise<Exercise> =>
       req<Exercise>(`/exercises/${id}`, jsonBody("PUT", body)),
+    delete: (id: number): Promise<void> => req(`/exercises/${id}`, { method: "DELETE" }),
     favorite: (id: number): Promise<void> => req(`/exercises/${id}/favorite`, { method: "POST" }),
     unfavorite: (id: number): Promise<void> => req(`/exercises/${id}/favorite`, { method: "DELETE" }),
   },
@@ -205,5 +240,44 @@ export const api = {
   activity: {
     list: (params: { client_id?: number; limit?: number } = {}): Promise<ActivityEvent[]> =>
       req<ActivityEvent[]>(`/activity${qs(params)}`),
+  },
+
+  clientPortal: {
+    dashboard: (clientId?: number): Promise<ClientPortalDashboard> =>
+      req<ClientPortalDashboard>(`/client-portal/dashboard${qs({ client_id: clientId })}`),
+  },
+
+  notifications: {
+    list: (unreadOnly = false): Promise<Notification[]> =>
+      req<Notification[]>(`/notifications${qs({ unread_only: unreadOnly })}`),
+    unreadCount: (): Promise<{ count: number }> =>
+      req<{ count: number }>("/notifications/unread-count"),
+    markRead: (id: number): Promise<Notification> =>
+      req<Notification>(`/notifications/${id}/read`, { method: "POST" }),
+    markAllRead: (): Promise<{ count: number }> =>
+      req<{ count: number }>("/notifications/read-all", { method: "POST" }),
+  },
+
+  schedule: {
+    list: (start: string, end: string): Promise<ScheduledSession[]> =>
+      req<ScheduledSession[]>(`/schedule${qs({ start, end })}`),
+    needsReview: (): Promise<ScheduledSession[]> => req<ScheduledSession[]>("/schedule/needs-review"),
+    create: (body: {
+      client_id: number;
+      scheduled_at: string;
+      repeat?: RepeatRule | null;
+      repeat_until?: string | null;
+      notes?: string | null;
+    }): Promise<ScheduledSession[]> => req<ScheduledSession[]>("/schedule", jsonBody("POST", body)),
+    update: (
+      id: number,
+      body: { scheduled_at?: string; status?: "upcoming" | "completed" | "cancelled"; notes?: string }
+    ): Promise<ScheduledSession> => req<ScheduledSession>(`/schedule/${id}`, jsonBody("PUT", body)),
+    cancel: (id: number, scope: "one" | "future"): Promise<ScheduledSession[]> =>
+      req<ScheduledSession[]>(`/schedule/${id}/cancel`, jsonBody("POST", { scope })),
+    delete: (id: number, scope: "one" | "future" = "one"): Promise<void> =>
+      req(`/schedule/${id}${qs({ scope })}`, { method: "DELETE" }),
+    startWorkout: (id: number): Promise<WorkoutSession> =>
+      req<WorkoutSession>(`/schedule/${id}/start-workout`, { method: "POST" }),
   },
 };

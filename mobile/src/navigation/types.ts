@@ -8,7 +8,8 @@ export type AuthStackParamList = {
 export type RootStackParamList = {
   MainTabs: undefined;
   AddClient: undefined;
-  ClientProfile: { clientId: number };
+  ClientProfile: { clientId: number; initialTab?: "Overview" | "History" | "PRs" | "Notes" | "Programs" };
+  Notifications: undefined;
   ClientsList: { filter?: "inactive"; autoFocusSearch?: boolean; pick?: boolean } | undefined;
   RecentPRs: undefined;
   SessionLog: { sessionId: number };
@@ -21,7 +22,7 @@ export type TabParamList = {
   DashboardTab: undefined;
   ClientsTab: { filter?: "active" | "inactive"; autoFocusSearch?: boolean } | undefined;
   ExercisesTab: undefined;
-  ProgramsTab: undefined;
+  ScheduleTab: undefined;
   ActivityTab: undefined;
   SettingsTab: undefined;
 };

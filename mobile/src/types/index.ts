@@ -91,6 +91,11 @@ export interface Exercise {
   name: string;
   category: string;
   subcategory: string | null;
+  muscle_group: string | null;
+  secondary_muscles: string[] | null;
+  equipment: string | null;
+  exercise_type: "compound" | "isolation" | null;
+  demo_media_url: string | null;
   notes: string | null;
   is_custom: boolean;
   is_favorite: boolean;
@@ -189,6 +194,7 @@ export interface SetEntry {
   set_modifier: string | null;
   status: SetStatus;
   superset_group: string | null;
+  notes: string | null;
   is_pr: boolean;
   pr_type: PrType | null;
   created_at: string;
@@ -327,6 +333,7 @@ export interface DashboardStats {
   workouts_all_time: number;
   adherence_pct: number | null;
   prs_last_7_days: number;
+  upcoming_sessions: number;
   inactive_clients: number;
   lifetime_prs: number;
   avg_sessions_per_client: number | null;
@@ -383,4 +390,100 @@ export interface ClientPRSummary {
   prs_this_month: number;
   last_pr_at: string | null;
   exercises: ExercisePRSummary[];
+}
+
+export interface BestSet {
+  weight: number | null;
+  reps: number | null;
+  session_date: string;
+}
+
+export interface ExerciseInsight {
+  exercise_id: number;
+  sessions_used: number;
+  last_used_at: string;
+  last3_best: BestSet[];
+}
+
+export interface ClientExerciseInsights {
+  unit: Unit;
+  exercises: ExerciseInsight[];
+}
+
+export type ScheduledStatus = "upcoming" | "completed" | "cancelled";
+export type RepeatRule = "weekly" | "biweekly";
+
+export interface ScheduledSession {
+  id: number;
+  client_id: number;
+  client_name: string;
+  client_photo_url: string | null;
+  scheduled_at: string;
+  status: ScheduledStatus;
+  repeat_rule: RepeatRule | null;
+  series_id: string | null;
+  workout_session_id: number | null;
+  notes: string | null;
+}
+
+export type NotificationType =
+  | "client_inactive"
+  | "new_pr"
+  | "session_reminder"
+  | "missed_workout";
+
+export interface Notification {
+  id: number;
+  type: NotificationType;
+  client_id: number | null;
+  scheduled_session_id: number | null;
+  workout_session_id: number | null;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface PortalNextSession {
+  scheduled_at: string;
+  trainer_name: string | null;
+  notes: string | null;
+}
+
+export interface PortalPR {
+  exercise_name: string;
+  pr_type: string;
+  value: number;
+  unit: string;
+  reps: number | null;
+  achieved_at: string;
+}
+
+export interface PortalKeyLift {
+  exercise_name: string;
+  unit: Unit;
+  points: { date: string; value: number }[];
+}
+
+export interface PortalWorkout {
+  id: number;
+  started_at: string;
+  duration_seconds: number | null;
+  exercise_count: number;
+  pr_count: number;
+}
+
+export interface ClientPortalDashboard {
+  client_name: string;
+  client_photo_url: string | null;
+  trainer_name: string | null;
+  trainer_business: string | null;
+  unit: Unit;
+  next_session: PortalNextSession | null;
+  streak_weeks: number;
+  workouts_this_month: number;
+  lifetime_workouts: number;
+  recent_prs: PortalPR[];
+  weekly_workouts: { week_start: string; workouts: number }[];
+  key_lifts: PortalKeyLift[];
+  recent_workouts: PortalWorkout[];
 }

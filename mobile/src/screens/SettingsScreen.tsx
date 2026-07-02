@@ -5,11 +5,14 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import Btn from "../components/Btn";
 import Input from "../components/Input";
 import Spinner from "../components/Spinner";
+import { useRoleOverride, type PreviewRole } from "../contexts/RoleOverride";
 import { api } from "../lib/api";
+import { APP_ENV, IS_DEV_BUILD } from "../lib/env";
 import { colors, font, radius, spacing } from "../theme";
 
 export default function SettingsScreen() {
   const { signOut } = useClerk();
+  const { override, setOverride, clearOverride } = useRoleOverride();
   const { data: trainer, isLoading } = useQuery({
     queryKey: ["trainer-me"],
     queryFn: api.trainer.me,
@@ -121,11 +124,47 @@ export default function SettingsScreen() {
         onPress={() =>
           Alert.alert("Sign out", "Are you sure?", [
             { text: "Cancel", style: "cancel" },
-            { text: "Sign out", style: "destructive", onPress: () => signOut() },
+            {
+              text: "Sign out",
+              style: "destructive",
+              onPress: () => {
+                clearOverride(); // role override is session-only — never survives logout
+                signOut();
+              },
+            },
           ])
         }
         fullWidth
       />
+
+      {/* Excluded from the render tree entirely in production builds. */}
+      {IS_DEV_BUILD && (
+        <View style={[styles.section, styles.devSection]}>
+          <Text style={styles.devSectionTitle}>Developer Options</Text>
+          <Text style={styles.sectionHint}>Build: {APP_ENV}</Text>
+          <Text style={styles.devLabel}>Preview as:</Text>
+          <View style={styles.unitRow}>
+            {(["trainer", "client"] as PreviewRole[]).map((role) => {
+              const active = (override ?? "trainer") === role;
+              return (
+                <TouchableOpacity
+                  key={role}
+                  style={[styles.unitBtn, active && styles.devBtnActive]}
+                  onPress={() => setOverride(role === "trainer" ? null : role)}
+                >
+                  <Text style={[styles.unitBtnText, active && { color: "#000" }]}>
+                    {role === "trainer" ? "Trainer" : "Client"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.sectionHint}>
+            Dev only — switches which view renders for this account. Session-only; resets on
+            logout, never saved to the database.
+          </Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -157,4 +196,8 @@ const styles = StyleSheet.create({
   unitBtnTextActive: { color: "#000" },
   subscriptionStatus: { fontSize: font.sm, color: colors.white },
   divider: { height: 1, backgroundColor: colors.border },
+  devSection: { borderColor: "#3b82f6" + "60", borderStyle: "dashed" },
+  devSectionTitle: { fontSize: font.base, fontWeight: "600", color: "#3b82f6" },
+  devLabel: { fontSize: font.sm, fontWeight: "500", color: colors.white },
+  devBtnActive: { backgroundColor: "#3b82f6" },
 });
