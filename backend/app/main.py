@@ -7,7 +7,19 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import activity, calendar, clients, export, exercises, programs, prs, progress, sessions, trainer
+from .routers import (
+    activity,
+    calendar,
+    clients,
+    dashboard,
+    export,
+    exercises,
+    programs,
+    prs,
+    progress,
+    sessions,
+    trainer,
+)
 
 app = FastAPI(title="FitTrack Pro API", version="1.0.0")
 
@@ -20,6 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(trainer.router)
+app.include_router(dashboard.router)
 app.include_router(clients.router)
 app.include_router(exercises.router)
 app.include_router(programs.router)

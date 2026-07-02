@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -12,6 +13,7 @@ from ..models.activity import ActivityEvent
 from ..models.enums import ActivityEventTypeEnum, ClientStatusEnum
 from ..models.exercises import Exercise
 from ..models.identity import User
+from ..models.programs import ClientProgram
 from ..models.prs import PR
 from ..models.roster import Client, ClientNote, Invite
 from ..models.sessions import WorkoutSession
@@ -37,51 +39,118 @@ def _week_start(now: datetime) -> datetime:
     return monday.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
+def _prev_iso_week(iso_week: tuple[int, int]) -> tuple[int, int]:
+    monday = date.fromisocalendar(iso_week[0], iso_week[1], 1) - timedelta(weeks=1)
+    iso = monday.isocalendar()
+    return (iso[0], iso[1])
+
+
+def _streak_weeks(completed_weeks: set[tuple[int, int]], today: date) -> int:
+    """Consecutive ISO weeks with >=1 completed session, counting backward from the
+    current week. Mid-week grace: if the current week has no session yet, the streak
+    may start at the previous week."""
+    iso = today.isocalendar()
+    week = (iso[0], iso[1])
+    if week not in completed_weeks:
+        week = _prev_iso_week(week)
+    streak = 0
+    while week in completed_weeks:
+        streak += 1
+        week = _prev_iso_week(week)
+    return streak
+
+
+def _training_phase(program: ClientProgram, today: date) -> str:
+    if program.start_date is None:
+        return program.name
+    week = (today - program.start_date).days // 7 + 1
+    if week < 1:
+        return program.name
+    return f"{program.name} — Week {week}"
+
+
 @router.get("", response_model=list[ClientPulseOut])
 def list_clients(
-    status: ClientStatusEnum = ClientStatusEnum.active,
+    status: Literal["active", "archived", "all"] = "active",
     trainer: User = Depends(get_current_trainer),
     db: Session = Depends(get_db),
 ):
-    clients = db.query(Client).filter(Client.trainer_id == trainer.id, Client.status == status).all()
+    query = db.query(Client).filter(Client.trainer_id == trainer.id)
+    if status != "all":
+        query = query.filter(Client.status == ClientStatusEnum(status))
+    clients = query.all()
+    client_ids = [c.id for c in clients]
+
     now = datetime.now(timezone.utc)
+    today = now.date()
     week_start = _week_start(now)
     stale_cutoff = now - timedelta(days=STALE_DAYS)
 
-    out: list[ClientPulseOut] = []
-    for c in clients:
-        last_session = (
-            db.query(WorkoutSession)
-            .filter(WorkoutSession.client_id == c.id)
-            .order_by(WorkoutSession.started_at.desc())
-            .first()
+    last_session_by_client: dict[int, datetime] = {}
+    sessions_this_week_by_client: dict[int, int] = {}
+    completed_weeks_by_client: dict[int, set[tuple[int, int]]] = {}
+    recent_pr_label_by_client: dict[int, str] = {}
+    training_phase_by_client: dict[int, str] = {}
+
+    if client_ids:
+        last_session_by_client = dict(
+            db.query(WorkoutSession.client_id, func.max(WorkoutSession.started_at))
+            .filter(WorkoutSession.client_id.in_(client_ids))
+            .group_by(WorkoutSession.client_id)
+            .all()
         )
-        sessions_this_week = (
-            db.query(func.count(WorkoutSession.id))
-            .filter(WorkoutSession.client_id == c.id, WorkoutSession.started_at >= week_start)
-            .scalar()
+        sessions_this_week_by_client = dict(
+            db.query(WorkoutSession.client_id, func.count(WorkoutSession.id))
+            .filter(WorkoutSession.client_id.in_(client_ids), WorkoutSession.started_at >= week_start)
+            .group_by(WorkoutSession.client_id)
+            .all()
         )
-        recent_pr = (
+        completed_rows = (
+            db.query(WorkoutSession.client_id, WorkoutSession.started_at)
+            .filter(WorkoutSession.client_id.in_(client_ids), WorkoutSession.ended_at.isnot(None))
+            .all()
+        )
+        for client_id, started_at in completed_rows:
+            iso = started_at.astimezone(timezone.utc).date().isocalendar()
+            completed_weeks_by_client.setdefault(client_id, set()).add((iso[0], iso[1]))
+
+        # Most recent PR per client (Postgres DISTINCT ON).
+        pr_rows = (
             db.query(PR, Exercise)
             .join(Exercise, PR.exercise_id == Exercise.id)
-            .filter(PR.client_id == c.id)
-            .order_by(PR.achieved_at.desc())
-            .first()
+            .filter(PR.client_id.in_(client_ids))
+            .order_by(PR.client_id, PR.achieved_at.desc())
+            .distinct(PR.client_id)
+            .all()
         )
-        recent_pr_label = None
-        if recent_pr:
-            pr, exercise = recent_pr
-            recent_pr_label = f"{exercise.name}: {pr.value:g} {pr.unit.value}" + (
+        for pr, exercise in pr_rows:
+            recent_pr_label_by_client[pr.client_id] = f"{exercise.name}: {pr.value:g} {pr.unit.value}" + (
                 f" x {pr.reps}" if pr.reps else ""
             )
 
+        # Most recently assigned active program per client.
+        active_programs = (
+            db.query(ClientProgram)
+            .filter(ClientProgram.client_id.in_(client_ids), ClientProgram.active.is_(True))
+            .order_by(ClientProgram.client_id, ClientProgram.assigned_at.desc())
+            .distinct(ClientProgram.client_id)
+            .all()
+        )
+        for program in active_programs:
+            training_phase_by_client[program.client_id] = _training_phase(program, today)
+
+    out: list[ClientPulseOut] = []
+    for c in clients:
+        last_session_at = last_session_by_client.get(c.id)
         out.append(
             ClientPulseOut(
                 **ClientOut.model_validate(c).model_dump(),
-                last_session_at=last_session.started_at if last_session else None,
-                sessions_this_week=sessions_this_week or 0,
-                recent_pr_label=recent_pr_label,
-                is_stale=(last_session is None or last_session.started_at < stale_cutoff),
+                last_session_at=last_session_at,
+                sessions_this_week=sessions_this_week_by_client.get(c.id, 0),
+                recent_pr_label=recent_pr_label_by_client.get(c.id),
+                is_stale=(last_session_at is None or last_session_at < stale_cutoff),
+                training_phase=training_phase_by_client.get(c.id),
+                streak_weeks=_streak_weeks(completed_weeks_by_client.get(c.id, set()), today),
             )
         )
     return out

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -19,6 +19,9 @@ class Client(Base):
     email: Mapped[str] = mapped_column(String, nullable=False)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
+    goal_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    training_frequency_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
     starting_bodyweight: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     starting_body_fat_pct: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     preferred_unit: Mapped[UnitEnum] = mapped_column(

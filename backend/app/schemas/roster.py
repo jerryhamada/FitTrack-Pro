@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from ..models.enums import ClientStatusEnum, InviteStatusEnum, UnitEnum
+
+GoalType = Literal["strength", "hypertrophy", "fat_loss", "endurance", "general_fitness"]
 
 
 class ClientCreate(BaseModel):
@@ -12,6 +15,9 @@ class ClientCreate(BaseModel):
     email: EmailStr
     phone: str | None = None
     goals: str | None = None
+    goal_type: GoalType | None = None
+    training_frequency_target: int | None = Field(default=None, ge=1, le=7)
+    photo_url: str | None = None
     starting_bodyweight: float | None = None
     starting_body_fat_pct: float | None = None
     preferred_unit: UnitEnum = UnitEnum.lbs
@@ -22,6 +28,9 @@ class ClientUpdate(BaseModel):
     email: EmailStr | None = None
     phone: str | None = None
     goals: str | None = None
+    goal_type: GoalType | None = None
+    training_frequency_target: int | None = Field(default=None, ge=1, le=7)
+    photo_url: str | None = None
     starting_bodyweight: float | None = None
     starting_body_fat_pct: float | None = None
     preferred_unit: UnitEnum | None = None
@@ -35,6 +44,9 @@ class ClientOut(BaseModel):
     email: str
     phone: str | None
     goals: str | None
+    goal_type: str | None
+    training_frequency_target: int | None
+    photo_url: str | None
     starting_bodyweight: float | None
     starting_body_fat_pct: float | None
     preferred_unit: UnitEnum
@@ -47,6 +59,8 @@ class ClientPulseOut(ClientOut):
     sessions_this_week: int = 0
     recent_pr_label: str | None = None
     is_stale: bool = False
+    training_phase: str | None = None
+    streak_weeks: int = 0
 
 
 class ClientNoteCreate(BaseModel):

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     database_url: str
     clerk_secret_key: str = ""
     clerk_jwks_url: str = ""
+    # DEV ONLY: skip JWT verification and act as the first trainer in the DB.
+    dev_auth_bypass: bool = False
 
 
 @lru_cache(maxsize=1)

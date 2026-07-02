@@ -13,7 +13,22 @@ from .database import get_db
 from .models.enums import RoleEnum
 from .models.identity import TrainerProfile, User
 
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _get_dev_bypass_trainer(db: Session) -> User:
+    """DEV ONLY (DEV_AUTH_BYPASS=1): return the first trainer, creating one if the
+    DB is empty, so the app works without a Clerk token."""
+    user = db.query(User).filter(User.role == RoleEnum.trainer).order_by(User.id).first()
+    if user is not None:
+        return user
+    user = User(clerk_user_id="dev_bypass", role=RoleEnum.trainer, email="dev@local.test", name="Dev Trainer")
+    db.add(user)
+    db.flush()
+    db.add(TrainerProfile(user_id=user.id))
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @lru_cache(maxsize=1)
@@ -42,12 +57,16 @@ def _verify_token(credentials: HTTPAuthorizationCredentials) -> dict:
 
 
 def get_current_trainer(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Validate the Clerk JWT and return the trainer's `users` row, auto-provisioning
     a trainer account + profile on first sign-in (Clerk owns the auth identity; we
     just mirror it locally so every other table can scope by trainer_id)."""
+    if get_settings().dev_auth_bypass:
+        return _get_dev_bypass_trainer(db)
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     payload = _verify_token(credentials)
     clerk_user_id: str = payload["sub"]
 
