@@ -5,12 +5,13 @@ import { useRoleOverride } from "../contexts/RoleOverride";
 import { colors, font, spacing } from "../theme";
 import ClientDashboardScreen from "./ClientDashboardScreen";
 import ClientHistoryScreen from "./ClientHistoryScreen";
+import ClientProgressScreen from "./ClientProgressScreen";
 import ClientMyWorkoutsScreen from "./ClientMyWorkoutsScreen";
 
 const Tab = createBottomTabNavigator();
 
 function ClientTabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const icons: Record<string, string> = { Home: "🏠", "My Workouts": "🗓", History: "📖" };
+  const icons: Record<string, string> = { Home: "🏠", "My Workouts": "🗓", History: "📖", Progress: "📈" };
   return (
     <Text style={{ fontSize: 18, opacity: focused ? 1 : 0.5 }}>{icons[name] ?? "•"}</Text>
   );
@@ -45,6 +46,7 @@ export default function ClientPreviewScreen() {
         <Tab.Screen name="Home" component={ClientDashboardScreen} />
         <Tab.Screen name="My Workouts" component={ClientMyWorkoutsScreen} />
         <Tab.Screen name="History" component={ClientHistoryScreen} />
+        <Tab.Screen name="Progress" component={ClientProgressScreen} />
       </Tab.Navigator>
     </View>
   );

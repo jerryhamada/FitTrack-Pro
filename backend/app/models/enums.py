@@ -53,3 +53,21 @@ class ActivityEventTypeEnum(str, enum.Enum):
     invite_accepted = "invite_accepted"
     badge_earned = "badge_earned"
     client_added = "client_added"
+
+
+class ScheduledStatusEnum(str, enum.Enum):
+    upcoming = "upcoming"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class RepeatRuleEnum(str, enum.Enum):
+    weekly = "weekly"
+    biweekly = "biweekly"
+
+
+class NotificationTypeEnum(str, enum.Enum):
+    client_inactive = "client_inactive"
+    new_pr = "new_pr"
+    session_reminder = "session_reminder"
+    missed_workout = "missed_workout"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
@@ -28,6 +28,32 @@ class WorkoutSession(Base):
     sets: Mapped[list["SetEntry"]] = relationship(
         back_populates="session", cascade="all, delete-orphan", order_by="SetEntry.order_index"
     )
+    exercises: Mapped[list["SessionExercise"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="SessionExercise.order_index"
+    )
+
+
+class SessionExercise(Base):
+    """Per-session exercise membership + superset grouping (the 'workout_exercises'
+    of the spec). superset_group_id is null for standalone exercises (backward
+    compatible); a shared non-null id + superset_order groups exercises into a
+    superset. Sets reference exercises directly — this table only carries ordering
+    and grouping, never set data."""
+
+    __tablename__ = "session_exercises"
+    __table_args__ = (
+        UniqueConstraint("session_id", "exercise_id", name="uq_session_exercise"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    superset_group_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    superset_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    session: Mapped["WorkoutSession"] = relationship(back_populates="exercises")
+    exercise: Mapped["Exercise"] = relationship()  # noqa: F821
 
 
 class SetEntry(Base):
@@ -51,6 +77,7 @@ class SetEntry(Base):
         Enum(SetStatusEnum, name="set_status_enum"), nullable=False, default=SetStatusEnum.completed
     )
     superset_group: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_pr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     pr_type: Mapped[PrTypeEnum | None] = mapped_column(Enum(PrTypeEnum, name="pr_type_enum"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -9,12 +9,13 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_trainer
 from ..database import get_db
-from ..models.enums import ClientStatusEnum
+from ..models.enums import ClientStatusEnum, ScheduledStatusEnum
 from ..models.exercises import Exercise
 from ..models.identity import User
 from ..models.programs import ClientProgram, ClientProgramDay
 from ..models.prs import PR
 from ..models.roster import Client
+from ..models.schedule import ScheduledSession
 from ..models.sessions import SetEntry, WorkoutSession
 from ..schemas.dashboard import CategoryCount, DashboardStats, RecentPROut
 
@@ -175,6 +176,18 @@ def get_stats(trainer: User = Depends(get_current_trainer), db: Session = Depend
         )
         top_categories = [CategoryCount(category=cat, count=cnt) for cat, cnt in rows]
 
+    upcoming_sessions = (
+        db.query(func.count(ScheduledSession.id))
+        .filter(
+            ScheduledSession.trainer_id == trainer.id,
+            ScheduledSession.status == ScheduledStatusEnum.upcoming,
+            ScheduledSession.scheduled_at >= now,
+            ScheduledSession.scheduled_at < now + timedelta(days=7),
+        )
+        .scalar()
+        or 0
+    )
+
     return DashboardStats(
         active_clients=len(client_ids),
         workouts_today=workouts_today,
@@ -182,6 +195,7 @@ def get_stats(trainer: User = Depends(get_current_trainer), db: Session = Depend
         workouts_all_time=workouts_all_time,
         adherence_pct=_adherence_pct(db, client_ids, now),
         prs_last_7_days=prs_last_7,
+        upcoming_sessions=upcoming_sessions,
         inactive_clients=inactive,
         lifetime_prs=lifetime_prs,
         avg_sessions_per_client=round(workouts_all_time / len(client_ids), 1) if client_ids else None,

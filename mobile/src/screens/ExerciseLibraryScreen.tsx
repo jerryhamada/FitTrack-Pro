@@ -7,7 +7,9 @@ import EmptyState from "../components/EmptyState";
 import Input from "../components/Input";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
+import BodyDiagram from "../components/BodyDiagram";
 import { api } from "../lib/api";
+import { MUSCLE_LABELS, MUSCLE_REGIONS, type MuscleRegion } from "../lib/muscles";
 import type { Exercise } from "../types";
 import { colors, font, radius, spacing } from "../theme";
 
@@ -17,6 +19,11 @@ const MUSCLE_GROUPS: { title: string; muscles: string[] }[] = [
   { title: "Core", muscles: ["core"] },
 ];
 const ALL_MUSCLES = MUSCLE_GROUPS.flatMap((g) => g.muscles);
+
+// Narrow a stored muscle string to a known region (or null if unrecognized).
+function asRegion(m: string | null | undefined): MuscleRegion | null {
+  return m && (MUSCLE_REGIONS as readonly string[]).includes(m) ? (m as MuscleRegion) : null;
+}
 const EQUIPMENT = ["barbell", "dumbbell", "machine", "cable", "bodyweight", "band", "sled", "kettlebell"];
 
 // The DB requires a coarse category — derive it from the primary muscle so the
@@ -34,6 +41,7 @@ interface FormState {
   secondary_muscles: string[];
   equipment: string | null;
   exercise_type: "compound" | "isolation" | null;
+  steps: string; // one step per line; split into instructions_steps on save
   notes: string;
 }
 
@@ -43,6 +51,7 @@ const EMPTY_FORM: FormState = {
   secondary_muscles: [],
   equipment: null,
   exercise_type: null,
+  steps: "",
   notes: "",
 };
 
@@ -78,6 +87,10 @@ export default function ExerciseLibraryScreen() {
         secondary_muscles: form.secondary_muscles.length > 0 ? form.secondary_muscles : null,
         equipment: form.equipment,
         exercise_type: form.exercise_type,
+        instructions_steps: (() => {
+          const steps = form.steps.split("\n").map((l) => l.trim()).filter(Boolean);
+          return steps.length > 0 ? steps : null;
+        })(),
         notes: form.notes.trim() || null,
       };
       return editingId != null ? api.exercises.update(editingId, body) : api.exercises.create(body);
@@ -151,6 +164,7 @@ export default function ExerciseLibraryScreen() {
       secondary_muscles: e.secondary_muscles ?? [],
       equipment: e.equipment,
       exercise_type: e.exercise_type,
+      steps: (e.instructions_steps ?? []).join("\n"),
       notes: e.notes ?? "",
     });
     setDetail(null);
@@ -252,48 +266,96 @@ export default function ExerciseLibraryScreen() {
         </ScrollView>
       )}
 
-      {/* Detail sheet */}
+      {/* Detail sheet — anatomy diagram is the anchor */}
       <BottomSheet visible={detail !== null} onClose={() => setDetail(null)}>
         {detail && (
-          <View style={{ gap: spacing.sm }}>
-            <View style={styles.detailHeader}>
-              <Text style={styles.detailName}>{detail.name}</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  toggleFavorite.mutate({ id: detail.id, isFavorite: detail.is_favorite });
-                  setDetail({ ...detail, is_favorite: !detail.is_favorite });
-                }}
-              >
-                <Text style={[styles.star, detail.is_favorite && styles.starActive]}>
-                  {detail.is_favorite ? "★" : "☆"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <DetailRow label="Primary muscle" value={detail.muscle_group ?? "—"} />
-            <DetailRow
-              label="Secondary muscles"
-              value={detail.secondary_muscles?.length ? detail.secondary_muscles.join(", ") : "—"}
-            />
-            <DetailRow label="Equipment" value={detail.equipment ?? "—"} />
-            <DetailRow label="Type" value={detail.exercise_type ?? "—"} />
-            {detail.notes && <DetailRow label="Instructions" value={detail.notes} />}
-            <View style={styles.demoPlaceholder}>
-              <Text style={styles.demoPlaceholderText}>🎬 Demo video — coming soon</Text>
-            </View>
-            {detail.is_custom ? (
-              <View style={styles.detailActions}>
-                <Btn label="Edit" variant="secondary" onPress={() => openEdit(detail)} />
-                <Btn
-                  label={deleteExercise.isPending ? "Deleting..." : "Delete"}
-                  variant="danger"
-                  onPress={() => confirmDelete(detail)}
-                  loading={deleteExercise.isPending}
-                />
+          <ScrollView style={{ maxHeight: 620 }} showsVerticalScrollIndicator={false}>
+            <View style={{ gap: spacing.md }}>
+              <View style={styles.detailHeader}>
+                <Text style={styles.detailName}>{detail.name}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    toggleFavorite.mutate({ id: detail.id, isFavorite: detail.is_favorite });
+                    setDetail({ ...detail, is_favorite: !detail.is_favorite });
+                  }}
+                >
+                  <Text style={[styles.star, detail.is_favorite && styles.starActive]}>
+                    {detail.is_favorite ? "★" : "☆"}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            ) : (
-              <Text style={styles.builtinHint}>Built-in exercise — part of the default library.</Text>
-            )}
-          </View>
+
+              {/* Muscle map — visual anchor */}
+              <BodyDiagram
+                primary={asRegion(detail.muscle_group)}
+                secondary={(detail.secondary_muscles ?? []).map(asRegion).filter(Boolean) as MuscleRegion[]}
+              />
+
+              <View style={styles.muscleTags}>
+                {detail.muscle_group && <Pill tone="accent">{MUSCLE_LABELS[asRegion(detail.muscle_group)!] ?? detail.muscle_group}</Pill>}
+                {(detail.secondary_muscles ?? []).map((m) => (
+                  <Pill key={m}>{MUSCLE_LABELS[asRegion(m)!] ?? m}</Pill>
+                ))}
+              </View>
+
+              <View style={styles.detailRows}>
+                <DetailRow label="Equipment" value={detail.equipment ?? "—"} />
+                <DetailRow label="Type" value={detail.exercise_type ?? "—"} />
+              </View>
+
+              {/* Video / demo */}
+              <View style={styles.demoSection}>
+                <Text style={styles.sectionHeading}>Demo</Text>
+                <View style={styles.demoPlaceholder}>
+                  <Text style={styles.demoIcon}>🎬</Text>
+                  <Text style={styles.demoPlaceholderText}>No demo video yet</Text>
+                  {detail.is_custom && (
+                    <TouchableOpacity
+                      style={styles.uploadBtn}
+                      onPress={() =>
+                        Alert.alert("Upload demo", "Video upload is coming in a future release.")
+                      }
+                    >
+                      <Text style={styles.uploadBtnText}>Upload demo video</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* How to perform — numbered steps */}
+              {(detail.instructions_steps?.length || detail.notes) && (
+                <View style={styles.stepsSection}>
+                  <Text style={styles.sectionHeading}>How to perform</Text>
+                  {detail.instructions_steps?.length ? (
+                    detail.instructions_steps.map((step, i) => (
+                      <View key={i} style={styles.stepRow}>
+                        <View style={styles.stepNum}>
+                          <Text style={styles.stepNumText}>{i + 1}</Text>
+                        </View>
+                        <Text style={styles.stepText}>{step}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.stepText}>{detail.notes}</Text>
+                  )}
+                </View>
+              )}
+
+              {detail.is_custom ? (
+                <View style={styles.detailActions}>
+                  <Btn label="Edit" variant="secondary" onPress={() => openEdit(detail)} />
+                  <Btn
+                    label={deleteExercise.isPending ? "Deleting..." : "Delete"}
+                    variant="danger"
+                    onPress={() => confirmDelete(detail)}
+                    loading={deleteExercise.isPending}
+                  />
+                </View>
+              ) : (
+                <Text style={styles.builtinHint}>Built-in exercise — part of the default library.</Text>
+              )}
+            </View>
+          </ScrollView>
         )}
       </BottomSheet>
 
@@ -371,9 +433,18 @@ export default function ExerciseLibraryScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <Text style={styles.fieldLabel}>How to perform (one step per line)</Text>
+            <TextInput
+              style={[styles.notesInput, { minHeight: 110 }]}
+              placeholder={"Set up: ...\nExecution: ...\nCue: ..."}
+              placeholderTextColor={colors.muted}
+              value={form.steps}
+              onChangeText={(v) => setForm({ ...form, steps: v })}
+              multiline
+            />
             <TextInput
               style={styles.notesInput}
-              placeholder="Notes / instructions (optional)"
+              placeholder="Extra notes (optional)"
               placeholderTextColor={colors.muted}
               value={form.notes}
               onChangeText={(v) => setForm({ ...form, notes: v })}
@@ -487,6 +558,17 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: "row", justifyContent: "space-between", gap: spacing.base },
   detailLabel: { fontSize: font.sm, color: colors.muted },
   detailValue: { fontSize: font.sm, color: colors.white, flex: 1, textAlign: "right", textTransform: "capitalize" },
+  detailRows: { gap: spacing.xs },
+  muscleTags: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, justifyContent: "center" },
+  sectionHeading: {
+    fontSize: font.xs,
+    fontWeight: "700",
+    color: colors.muted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  demoSection: {},
   demoPlaceholder: {
     backgroundColor: colors.bg,
     borderRadius: radius.md,
@@ -495,8 +577,31 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     padding: spacing.base,
     alignItems: "center",
+    gap: spacing.sm,
   },
+  demoIcon: { fontSize: 28 },
   demoPlaceholderText: { fontSize: font.sm, color: colors.muted },
+  uploadBtn: {
+    backgroundColor: colors.accentDim,
+    borderWidth: 1,
+    borderColor: colors.accent + "40",
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  uploadBtnText: { color: colors.accent, fontSize: font.sm, fontWeight: "600" },
+  stepsSection: { gap: spacing.xs },
+  stepRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start", marginBottom: spacing.sm },
+  stepNum: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepNumText: { color: "#000", fontSize: font.sm, fontWeight: "800" },
+  stepText: { flex: 1, color: colors.white, fontSize: font.sm, lineHeight: 20 },
   detailActions: { flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end" },
   builtinHint: { fontSize: font.xs, color: colors.muted, fontStyle: "italic" },
 });

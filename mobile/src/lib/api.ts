@@ -242,6 +242,18 @@ export const api = {
     deleteSet: (setId: number): Promise<void> => req(`/sets/${setId}`, { method: "DELETE" }),
     complete: (id: number): Promise<SessionSummary> =>
       req<SessionSummary>(`/sessions/${id}/complete`, { method: "POST" }),
+    addExercise: (sessionId: number, exerciseId: number): Promise<WorkoutSession> =>
+      req<WorkoutSession>(`/sessions/${sessionId}/exercises`, jsonBody("POST", { exercise_id: exerciseId })),
+    createSuperset: (sessionId: number, exerciseIds: number[]): Promise<WorkoutSession> =>
+      req<WorkoutSession>(`/sessions/${sessionId}/supersets`, jsonBody("POST", { exercise_ids: exerciseIds })),
+    ungroupSuperset: (sessionId: number, groupId: string): Promise<WorkoutSession> =>
+      req<WorkoutSession>(`/sessions/${sessionId}/supersets/${groupId}`, { method: "DELETE" }),
+    moveExercise: (
+      sessionId: number,
+      exerciseId: number,
+      body: { superset_group_id: string | null; superset_order?: number | null }
+    ): Promise<WorkoutSession> =>
+      req<WorkoutSession>(`/sessions/${sessionId}/exercises/${exerciseId}`, jsonBody("PUT", body)),
   },
 
   activity: {

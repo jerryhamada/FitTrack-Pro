@@ -14,7 +14,47 @@ import Spinner from "../components/Spinner";
 import { api } from "../lib/api";
 import { formatDate, formatDuration, formatWeight } from "../lib/utils";
 import { colors, font, radius, spacing } from "../theme";
-import type { PortalHistoryItem } from "../types";
+import type { PortalHistorySet, PortalWorkoutExercise, PortalHistoryItem } from "../types";
+
+type DetailBlock =
+  | { type: "standalone"; ex: PortalWorkoutExercise }
+  | { type: "superset"; groupId: string; members: PortalWorkoutExercise[]; rounds: number };
+
+/** Group superset members into a single unit (kept adjacent, ordered A/B/C);
+ *  standalone exercises pass through. Never flattens groups. */
+function buildDetailBlocks(exercises: PortalWorkoutExercise[]): DetailBlock[] {
+  const blocks: DetailBlock[] = [];
+  const emitted = new Set<string>();
+  for (const ex of exercises) {
+    if (ex.superset_group_id) {
+      if (emitted.has(ex.superset_group_id)) continue;
+      emitted.add(ex.superset_group_id);
+      const members = exercises
+        .filter((e) => e.superset_group_id === ex.superset_group_id)
+        .sort((a, b) => (a.superset_order ?? 0) - (b.superset_order ?? 0));
+      const rounds = Math.max(...members.map((m) => m.sets.length));
+      blocks.push({ type: "superset", groupId: ex.superset_group_id, members, rounds });
+    } else {
+      blocks.push({ type: "standalone", ex });
+    }
+  }
+  return blocks;
+}
+
+function SetLine({ st }: { st: PortalHistorySet }) {
+  return (
+    <View style={styles.detailSetRow}>
+      <Text style={styles.detailSetNum}>#{st.set_number}</Text>
+      <Text style={styles.detailSetValue}>
+        {st.weight != null ? formatWeight(st.weight, (st.weight_unit as "lbs" | "kg" | null) ?? null) : "BW"}
+        {st.reps != null ? ` × ${st.reps}` : ""}
+        {st.effort_value != null ? `  ${st.effort_type?.toUpperCase()} ${st.effort_value}` : ""}
+      </Text>
+      {st.is_pr && <Text style={styles.detailSetPr}>🏆</Text>}
+      {st.status !== "completed" && <Text style={styles.detailSetStatus}>{st.status}</Text>}
+    </View>
+  );
+}
 
 const GOLD = "#eab308";
 const FLAME = "#f97316";
@@ -281,23 +321,45 @@ function WorkoutDetailSheet({ workoutId, onClose }: { workoutId: number | null; 
           </View>
           {data.notes && <Text style={styles.detailNotes}>“{data.notes}”</Text>}
           <ScrollView style={{ maxHeight: 440 }}>
-            {data.exercises.map((ex) => (
-              <View key={ex.exercise_id} style={styles.detailExercise}>
-                <Text style={styles.detailExName}>{ex.exercise_name}</Text>
-                {ex.sets.map((st) => (
-                  <View key={st.set_number} style={styles.detailSetRow}>
-                    <Text style={styles.detailSetNum}>#{st.set_number}</Text>
-                    <Text style={styles.detailSetValue}>
-                      {st.weight != null ? formatWeight(st.weight, (st.weight_unit as "lbs" | "kg" | null) ?? null) : "BW"}
-                      {st.reps != null ? ` × ${st.reps}` : ""}
-                      {st.effort_value != null ? `  ${st.effort_type?.toUpperCase()} ${st.effort_value}` : ""}
-                    </Text>
-                    {st.is_pr && <Text style={styles.detailSetPr}>🏆</Text>}
-                    {st.status !== "completed" && <Text style={styles.detailSetStatus}>{st.status}</Text>}
-                  </View>
-                ))}
-              </View>
-            ))}
+            {buildDetailBlocks(data.exercises).map((block, bi) =>
+              block.type === "standalone" ? (
+                <View key={`ex-${block.ex.exercise_id}`} style={styles.detailExercise}>
+                  <Text style={styles.detailExName}>{block.ex.exercise_name}</Text>
+                  {block.ex.sets.map((st) => (
+                    <SetLine key={st.set_number} st={st} />
+                  ))}
+                </View>
+              ) : (
+                <View key={`ss-${block.groupId}`} style={styles.superset}>
+                  <Text style={styles.supersetLabel}>
+                    Superset {block.groupId}: {block.members.map((m) => m.exercise_name.split(" (")[0]).join(" + ")}
+                  </Text>
+                  {Array.from({ length: block.rounds }, (_, r) => (
+                    <View key={r} style={styles.roundBlock}>
+                      <Text style={styles.roundLabel}>Round {r + 1}</Text>
+                      {block.members.map((m) => {
+                        const st = m.sets[r];
+                        if (!st) return null;
+                        return (
+                          <View key={m.exercise_id} style={styles.roundSetRow}>
+                            <Text style={styles.roundMember} numberOfLines={1}>
+                              {m.exercise_name.split(" (")[0]}
+                            </Text>
+                            <Text style={styles.detailSetValue}>
+                              {st.weight != null
+                                ? formatWeight(st.weight, (st.weight_unit as "lbs" | "kg" | null) ?? null)
+                                : "BW"}
+                              {st.reps != null ? ` × ${st.reps}` : ""}
+                            </Text>
+                            {st.is_pr && <Text style={styles.detailSetPr}>🏆</Text>}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              )
+            )}
           </ScrollView>
         </View>
       )}
@@ -409,6 +471,20 @@ const styles = StyleSheet.create({
   detailSetValue: { color: colors.white, fontSize: font.sm, flex: 1 },
   detailSetPr: { fontSize: font.sm },
   detailSetStatus: { color: colors.muted, fontSize: font.xs, textTransform: "capitalize" },
+  superset: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingLeft: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.xs,
+  },
+  supersetLabel: { color: colors.accent, fontSize: font.sm, fontWeight: "700" },
+  roundBlock: { gap: 2, marginTop: spacing.xs },
+  roundLabel: { color: colors.muted, fontSize: font.xs, fontWeight: "600", textTransform: "uppercase" },
+  roundSetRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: spacing.sm },
+  roundMember: { color: colors.muted, fontSize: font.xs, width: 96 },
   errorWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.sm },
   errorEmoji: { fontSize: 40 },
   errorTitle: { fontSize: font.lg, fontWeight: "700", color: colors.white, textAlign: "center" },

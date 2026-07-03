@@ -9,15 +9,20 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import get_current_trainer
 from ..database import get_db
 from ..models.activity import ActivityEvent
-from ..models.enums import ActivityEventTypeEnum
+from ..models.enums import ActivityEventTypeEnum, ScheduledStatusEnum
 from ..models.exercises import Exercise
 from ..models.identity import User
 from ..models.prs import PR
 from ..models.programs import ClientProgramExercise
 from ..models.roster import Client
-from ..models.sessions import SetEntry, WorkoutSession
+from ..models.schedule import ScheduledSession
+from ..models.sessions import SessionExercise, SetEntry, WorkoutSession
 from ..schemas.sessions import (
+    AddSessionExerciseIn,
+    MoveExerciseIn,
     PlannedExerciseOut,
+    SessionExerciseOut,
+    SupersetCreateIn,
     SessionListItemOut,
     SessionOut,
     SessionStart,
@@ -43,9 +48,20 @@ def _exercise_name_map(db: Session, exercise_ids: set[int]) -> dict[int, str]:
 
 def _session_out(db: Session, session: WorkoutSession) -> SessionOut:
     out = SessionOut.model_validate(session)
-    names = _exercise_name_map(db, {s.exercise_id for s in session.sets})
+    ex_ids = {s.exercise_id for s in session.sets} | {se.exercise_id for se in session.exercises}
+    names = _exercise_name_map(db, ex_ids)
     for set_out, s in zip(out.sets, session.sets):
         set_out.exercise_name = names.get(s.exercise_id, "")
+    out.session_exercises = [
+        SessionExerciseOut(
+            exercise_id=se.exercise_id,
+            exercise_name=names.get(se.exercise_id, ""),
+            order_index=se.order_index,
+            superset_group_id=se.superset_group_id,
+            superset_order=se.superset_order,
+        )
+        for se in sorted(session.exercises, key=lambda e: e.order_index)
+    ]
 
     if session.client_program_day_id is not None:
         planned = (
@@ -72,11 +88,33 @@ def _session_out(db: Session, session: WorkoutSession) -> SessionOut:
     return out
 
 
+def _ensure_membership(db: Session, session: WorkoutSession, exercise_id: int) -> SessionExercise:
+    """Idempotently ensure the exercise is a member of the session; appends at the
+    end if new. Used both by explicit add and lazily when a set is first logged."""
+    existing = next((se for se in session.exercises if se.exercise_id == exercise_id), None)
+    if existing is not None:
+        return existing
+    next_order = max((se.order_index for se in session.exercises), default=-1) + 1
+    membership = SessionExercise(session_id=session.id, exercise_id=exercise_id, order_index=next_order)
+    db.add(membership)
+    session.exercises.append(membership)
+    return membership
+
+
+def _next_group_letter(session: WorkoutSession) -> str:
+    used = {se.superset_group_id for se in session.exercises if se.superset_group_id}
+    for i in range(26):
+        letter = chr(ord("A") + i)
+        if letter not in used:
+            return letter
+    return f"G{len(used) + 1}"
+
+
 def _get_session_or_404(db: Session, trainer_id: int, session_id: int) -> WorkoutSession:
     session = (
         db.query(WorkoutSession)
         .join(Client, WorkoutSession.client_id == Client.id)
-        .options(joinedload(WorkoutSession.sets))
+        .options(joinedload(WorkoutSession.sets), joinedload(WorkoutSession.exercises))
         .filter(WorkoutSession.id == session_id, Client.trainer_id == trainer_id)
         .first()
     )
@@ -108,12 +146,20 @@ def start_session(
 def cancel_session(
     session_id: int, trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)
 ):
-    """Cancel an accidentally-started session. Only allowed while it has no sets logged --
-    once a set is in, use the normal complete flow rather than discarding data."""
+    """Cancel a session and discard everything logged in it (e.g. started on the
+    wrong client). PR rows earned by its sets are rolled back too so records stay
+    consistent."""
     session = _get_session_or_404(db, trainer.id, session_id)
-    if session.sets:
-        raise HTTPException(status_code=400, detail="Can't cancel a session that already has sets logged")
-    db.delete(session)
+    if session.ended_at is not None:
+        raise HTTPException(status_code=400, detail="Can't cancel a completed session")
+    set_ids = [s.id for s in session.sets]
+    if set_ids:
+        db.query(PR).filter(PR.set_id.in_(set_ids)).delete(synchronize_session=False)
+    # Unlink any scheduled slot that pointed at this workout (slot stays 'upcoming').
+    db.query(ScheduledSession).filter(ScheduledSession.workout_session_id == session.id).update(
+        {"workout_session_id": None}, synchronize_session=False
+    )
+    db.delete(session)  # sets cascade via the ORM relationship
     db.commit()
 
 
@@ -154,6 +200,7 @@ def log_set(
     )
     new_set = SetEntry(session_id=session_id, set_number=set_number, **body.model_dump())
     db.add(new_set)
+    _ensure_membership(db, session, body.exercise_id)  # first set for an exercise joins the session
     db.flush()  # need new_set.id before PR detection
 
     detect_and_record_prs(db, session.client_id, new_set)
@@ -164,6 +211,98 @@ def log_set(
     out = SetOut.model_validate(new_set)
     out.exercise_name = exercise.name if exercise else ""
     return out
+
+
+@router.post("/sessions/{session_id}/exercises", response_model=SessionOut, status_code=201)
+def add_session_exercise(
+    session_id: int,
+    body: AddSessionExerciseIn,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Add an exercise to the session before any set is logged (e.g. building a
+    superset). Idempotent."""
+    session = _get_session_or_404(db, trainer.id, session_id)
+    _ensure_membership(db, session, body.exercise_id)
+    db.commit()
+    db.refresh(session)
+    return _session_out(db, session)
+
+
+@router.post("/sessions/{session_id}/supersets", response_model=SessionOut)
+def create_superset(
+    session_id: int,
+    body: SupersetCreateIn,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Group 2+ exercises into a superset (auto-lettered). Members keep their sets;
+    grouping only sets superset_group_id/order. Any member already in another group
+    is moved into this one."""
+    if len(body.exercise_ids) < 2:
+        raise HTTPException(status_code=422, detail="A superset needs at least 2 exercises")
+    session = _get_session_or_404(db, trainer.id, session_id)
+    memberships = []
+    for ex_id in body.exercise_ids:
+        memberships.append(_ensure_membership(db, session, ex_id))
+    db.flush()
+
+    group_id = _next_group_letter(session)
+    # Position the group where its first member currently sits.
+    anchor_order = min(m.order_index for m in memberships)
+    for i, m in enumerate(memberships):
+        m.superset_group_id = group_id
+        m.superset_order = i
+        m.order_index = anchor_order + i
+    db.commit()
+    db.refresh(session)
+    return _session_out(db, session)
+
+
+@router.delete("/sessions/{session_id}/supersets/{group_id}", response_model=SessionOut)
+def ungroup_superset(
+    session_id: int,
+    group_id: str,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Ungroup a superset — members become standalone again. Logged sets untouched."""
+    session = _get_session_or_404(db, trainer.id, session_id)
+    for se in session.exercises:
+        if se.superset_group_id == group_id:
+            se.superset_group_id = None
+            se.superset_order = None
+    db.commit()
+    db.refresh(session)
+    return _session_out(db, session)
+
+
+@router.put("/sessions/{session_id}/exercises/{exercise_id}", response_model=SessionOut)
+def move_session_exercise(
+    session_id: int,
+    exercise_id: int,
+    body: MoveExerciseIn,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Move an exercise into a group (superset_group_id set) or out of one (null).
+    Logged sets are preserved."""
+    session = _get_session_or_404(db, trainer.id, session_id)
+    membership = next((se for se in session.exercises if se.exercise_id == exercise_id), None)
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Exercise not in this session")
+    membership.superset_group_id = body.superset_group_id
+    if body.superset_group_id is None:
+        membership.superset_order = None
+    else:
+        if body.superset_order is not None:
+            membership.superset_order = body.superset_order
+        else:
+            peers = [se for se in session.exercises if se.superset_group_id == body.superset_group_id]
+            membership.superset_order = max((se.superset_order or 0 for se in peers), default=-1) + 1
+    db.commit()
+    db.refresh(session)
+    return _session_out(db, session)
 
 
 def _get_set_or_404(db: Session, trainer_id: int, set_id: int) -> SetEntry:
@@ -232,6 +371,11 @@ def complete_session(
                 payload={"exercise_name": names.get(pr_set.exercise_id, ""), "set_id": pr_set.id},
             )
         )
+
+    # Auto-resolve the scheduled slot this workout was started from (if any).
+    db.query(ScheduledSession).filter(ScheduledSession.workout_session_id == session.id).update(
+        {"status": ScheduledStatusEnum.completed}, synchronize_session=False
+    )
 
     evaluate_badges(db, session.client_id, trainer.id)
     db.commit()

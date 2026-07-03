@@ -8,9 +8,29 @@ from ..auth import get_current_trainer
 from ..database import get_db
 from ..models.exercises import Exercise, ExerciseFavorite
 from ..models.identity import User
+from ..models.programs import ClientProgramExercise, ProgramExercise
+from ..models.sessions import SetEntry
 from ..schemas.exercises import ExerciseCreate, ExerciseOut, ExerciseUpdate
 
 router = APIRouter(prefix="/exercises", tags=["exercises"])
+
+
+def _to_out(e: Exercise, *, is_favorite: bool = False) -> ExerciseOut:
+    return ExerciseOut(
+        id=e.id,
+        name=e.name,
+        category=e.category,
+        subcategory=e.subcategory,
+        muscle_group=e.muscle_group,
+        secondary_muscles=e.secondary_muscles,
+        equipment=e.equipment,
+        exercise_type=e.exercise_type,
+        demo_media_url=e.demo_media_url,
+        instructions_steps=e.instructions_steps,
+        notes=e.notes,
+        is_custom=e.trainer_id is not None,
+        is_favorite=is_favorite,
+    )
 
 
 @router.get("", response_model=list[ExerciseOut])
@@ -20,7 +40,10 @@ def list_exercises(
     trainer: User = Depends(get_current_trainer),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Exercise).filter(or_(Exercise.trainer_id.is_(None), Exercise.trainer_id == trainer.id))
+    query = db.query(Exercise).filter(
+        or_(Exercise.trainer_id.is_(None), Exercise.trainer_id == trainer.id),
+        Exercise.archived.is_(False),
+    )
     if category:
         query = query.filter(Exercise.category == category)
     exercises = query.order_by(Exercise.category, Exercise.subcategory, Exercise.name).all()
@@ -29,20 +52,7 @@ def list_exercises(
         f.exercise_id for f in db.query(ExerciseFavorite).filter(ExerciseFavorite.trainer_id == trainer.id).all()
     }
 
-    out = [
-        ExerciseOut(
-            **{
-                "id": e.id,
-                "name": e.name,
-                "category": e.category,
-                "subcategory": e.subcategory,
-                "notes": e.notes,
-                "is_custom": e.trainer_id is not None,
-                "is_favorite": e.id in favorite_ids,
-            }
-        )
-        for e in exercises
-    ]
+    out = [_to_out(e, is_favorite=e.id in favorite_ids) for e in exercises]
     if favorites_only:
         out = [e for e in out if e.is_favorite]
     return out
@@ -58,15 +68,7 @@ def create_exercise(
     db.add(exercise)
     db.commit()
     db.refresh(exercise)
-    return ExerciseOut(
-        id=exercise.id,
-        name=exercise.name,
-        category=exercise.category,
-        subcategory=exercise.subcategory,
-        notes=exercise.notes,
-        is_custom=True,
-        is_favorite=False,
-    )
+    return _to_out(exercise)
 
 
 def _get_own_exercise_or_404(db: Session, trainer_id: int, exercise_id: int) -> Exercise:
@@ -90,15 +92,34 @@ def update_exercise(
         setattr(exercise, field, value)
     db.commit()
     db.refresh(exercise)
-    return ExerciseOut(
-        id=exercise.id,
-        name=exercise.name,
-        category=exercise.category,
-        subcategory=exercise.subcategory,
-        notes=exercise.notes,
-        is_custom=True,
-        is_favorite=False,
+    is_favorite = (
+        db.query(ExerciseFavorite)
+        .filter(ExerciseFavorite.trainer_id == trainer.id, ExerciseFavorite.exercise_id == exercise.id)
+        .first()
+        is not None
     )
+    return _to_out(exercise, is_favorite=is_favorite)
+
+
+@router.delete("/{exercise_id}", status_code=204)
+def delete_exercise(
+    exercise_id: int, trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)
+):
+    """Delete a custom exercise. If it's referenced by workout history or programs it is
+    soft-deleted (archived: hidden from future selection, history stays intact)."""
+    exercise = _get_own_exercise_or_404(db, trainer.id, exercise_id)
+    referenced = (
+        db.query(SetEntry.id).filter(SetEntry.exercise_id == exercise_id).first() is not None
+        or db.query(ProgramExercise.id).filter(ProgramExercise.exercise_id == exercise_id).first() is not None
+        or db.query(ClientProgramExercise.id).filter(ClientProgramExercise.exercise_id == exercise_id).first()
+        is not None
+    )
+    if referenced:
+        exercise.archived = True
+    else:
+        db.query(ExerciseFavorite).filter(ExerciseFavorite.exercise_id == exercise_id).delete()
+        db.delete(exercise)
+    db.commit()
 
 
 @router.post("/{exercise_id}/favorite", status_code=204)

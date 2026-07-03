@@ -12,8 +12,10 @@ from .programs import (
     ProgramExercise,
 )
 from .prs import PR, Badge, ClientBadge
-from .roster import Client, ClientNote, Invite
-from .sessions import SetEntry, WorkoutSession
+from .notifications import Notification
+from .roster import BodyweightLog, Client, ClientNote, Invite
+from .schedule import ScheduledSession
+from .sessions import SessionExercise, SetEntry, WorkoutSession
 
 __all__ = [
     "ActivityEvent",
@@ -33,6 +35,10 @@ __all__ = [
     "Client",
     "ClientNote",
     "Invite",
+    "BodyweightLog",
+    "Notification",
+    "ScheduledSession",
+    "SessionExercise",
     "SetEntry",
     "WorkoutSession",
 ]

@@ -11,13 +11,16 @@ from .routers import (
     activity,
     calendar,
     client_insights,
+    client_portal,
     clients,
     dashboard,
     export,
     exercises,
+    notifications,
     programs,
     prs,
     progress,
+    schedule,
     sessions,
     trainer,
 )
@@ -36,9 +39,12 @@ app.include_router(trainer.router)
 app.include_router(dashboard.router)
 app.include_router(clients.router)
 app.include_router(client_insights.router)
+app.include_router(client_portal.router)
 app.include_router(exercises.router)
 app.include_router(programs.router)
 app.include_router(sessions.router)
+app.include_router(schedule.router)
+app.include_router(notifications.router)
 app.include_router(progress.router)
 app.include_router(prs.router)
 app.include_router(calendar.router)

@@ -240,7 +240,7 @@ export default function ClientDashboardScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickBtn}
-              onPress={() => scrollRef.current?.scrollTo({ y: progressY, animated: true })}
+              onPress={() => navigation.navigate("Progress" as never)}
             >
               <Text style={styles.quickText}>My Progress</Text>
             </TouchableOpacity>

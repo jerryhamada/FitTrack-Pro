@@ -44,3 +44,21 @@ class ClientPRSummary(BaseModel):
     prs_this_month: int
     last_pr_at: datetime | None
     exercises: list[ExercisePRSummary]
+
+
+class BestSet(BaseModel):
+    weight: float | None  # in the client's preferred unit
+    reps: int | None
+    session_date: date
+
+
+class ExerciseInsight(BaseModel):
+    exercise_id: int
+    sessions_used: int
+    last_used_at: datetime
+    last3_best: list[BestSet]  # best set from each of the last 3 sessions with this exercise
+
+
+class ClientExerciseInsights(BaseModel):
+    unit: UnitEnum
+    exercises: list[ExerciseInsight]

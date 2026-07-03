@@ -77,3 +77,16 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     client: Mapped[Client] = relationship(back_populates="invites")
+
+
+class BodyweightLog(Base):
+    """Client-owned self-logged bodyweight — the one client-writable table.
+    Never written by trainer endpoints."""
+
+    __tablename__ = "bodyweight_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
+    logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    weight: Mapped[float] = mapped_column(Numeric, nullable=False)
+    unit: Mapped[UnitEnum] = mapped_column(Enum(UnitEnum, name="unit_enum"), nullable=False)

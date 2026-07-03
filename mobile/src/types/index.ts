@@ -96,6 +96,7 @@ export interface Exercise {
   equipment: string | null;
   exercise_type: "compound" | "isolation" | null;
   demo_media_url: string | null;
+  instructions_steps: string[] | null;
   notes: string | null;
   is_custom: boolean;
   is_favorite: boolean;
@@ -212,6 +213,14 @@ export interface PlannedExercise {
   notes: string | null;
 }
 
+export interface SessionExercise {
+  exercise_id: number;
+  exercise_name: string;
+  order_index: number;
+  superset_group_id: string | null;
+  superset_order: number | null;
+}
+
 export interface WorkoutSession {
   id: number;
   client_id: number;
@@ -222,6 +231,7 @@ export interface WorkoutSession {
   duration_seconds: number | null;
   notes: string | null;
   sets: SetEntry[];
+  session_exercises: SessionExercise[];
   planned_exercises: PlannedExercise[];
 }
 
@@ -556,6 +566,8 @@ export interface PortalHistorySet {
 export interface PortalWorkoutExercise {
   exercise_id: number;
   exercise_name: string;
+  superset_group_id: string | null;
+  superset_order: number | null;
   sets: PortalHistorySet[];
 }
 

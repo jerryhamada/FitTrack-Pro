@@ -15,6 +15,7 @@ class DashboardStats(BaseModel):
     workouts_all_time: int
     adherence_pct: float | None  # null when no client has scheduled program days
     prs_last_7_days: int
+    upcoming_sessions: int  # scheduled sessions in the next 7 days
     inactive_clients: int
     lifetime_prs: int
     avg_sessions_per_client: float | None  # null when no active clients

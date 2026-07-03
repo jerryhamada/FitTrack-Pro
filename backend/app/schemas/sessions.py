@@ -31,6 +31,7 @@ class SetCreate(BaseModel):
     set_modifier: str | None = None
     status: SetStatusEnum = SetStatusEnum.completed
     superset_group: str | None = None
+    notes: str | None = None
 
 
 class SetUpdate(BaseModel):
@@ -42,6 +43,7 @@ class SetUpdate(BaseModel):
     effort_type: EffortTypeEnum | None = None
     set_modifier: str | None = None
     status: SetStatusEnum | None = None
+    notes: str | None = None
     superset_group: str | None = None
 
 
@@ -63,6 +65,7 @@ class SetOut(BaseModel):
     set_modifier: str | None
     status: SetStatusEnum
     superset_group: str | None
+    notes: str | None = None
     is_pr: bool
     pr_type: PrTypeEnum | None
     created_at: datetime
@@ -80,6 +83,14 @@ class PlannedExerciseOut(BaseModel):
     notes: str | None
 
 
+class SessionExerciseOut(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    order_index: int
+    superset_group_id: str | None
+    superset_order: int | None
+
+
 class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -92,7 +103,22 @@ class SessionOut(BaseModel):
     duration_seconds: int | None
     notes: str | None
     sets: list[SetOut]
+    session_exercises: list[SessionExerciseOut] = []
     planned_exercises: list[PlannedExerciseOut] = []
+
+
+class AddSessionExerciseIn(BaseModel):
+    exercise_id: int
+
+
+class SupersetCreateIn(BaseModel):
+    exercise_ids: list[int]  # 2+ members, in the desired A/B/C order
+
+
+class MoveExerciseIn(BaseModel):
+    # Move an exercise into a group (superset_group_id set) or out (null).
+    superset_group_id: str | None = None
+    superset_order: int | None = None
 
 
 class SessionListItemOut(BaseModel):

@@ -16,9 +16,12 @@ from ..models.prs import PR
 from ..models.roster import Client
 from ..models.sessions import SetEntry, WorkoutSession
 from ..schemas.insights import (
+    BestSet,
+    ClientExerciseInsights,
     ClientOverviewStats,
     ClientPRSummary,
     ClientWeeklyStats,
+    ExerciseInsight,
     ExercisePRSummary,
     WeeklyStat,
 )
@@ -156,6 +159,67 @@ def weekly_stats(
             )
         )
     return ClientWeeklyStats(unit=client.preferred_unit, weeks=out)
+
+
+@router.get("/clients/{client_id}/exercise-insights", response_model=ClientExerciseInsights)
+def exercise_insights(
+    client_id: int,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Per-exercise usage for the workout-logging screen: how often each exercise was
+    used, when last, and the best set from each of the client's last 3 sessions that
+    included it (weights in the client's preferred unit)."""
+    client = _get_client_or_404(db, trainer.id, client_id)
+    unit = client.preferred_unit
+
+    rows = (
+        db.query(SetEntry, WorkoutSession.id, WorkoutSession.started_at)
+        .join(WorkoutSession, WorkoutSession.id == SetEntry.session_id)
+        .filter(
+            WorkoutSession.client_id == client_id,
+            WorkoutSession.ended_at.isnot(None),
+            SetEntry.status != SetStatusEnum.skipped,
+        )
+        .all()
+    )
+
+    # exercise_id -> session_id -> (started_at, best set so far)
+    by_exercise: dict[int, dict[int, tuple[datetime, SetEntry]]] = defaultdict(dict)
+    for st, session_id, started_at in rows:
+        current = by_exercise[st.exercise_id].get(session_id)
+        if current is None or _set_sort_key(st) > _set_sort_key(current[1]):
+            by_exercise[st.exercise_id][session_id] = (started_at, st)
+
+    out = []
+    for exercise_id, sessions in by_exercise.items():
+        ordered = sorted(sessions.values(), key=lambda pair: pair[0], reverse=True)
+        best_sets = [
+            BestSet(
+                weight=round(from_lbs(to_lbs(total_load(st.weight, st.is_per_side), st.weight_unit or unit), unit), 1)
+                if st.weight is not None
+                else None,
+                reps=st.reps,
+                session_date=started_at.astimezone(timezone.utc).date(),
+            )
+            for started_at, st in ordered[:3]
+        ]
+        out.append(
+            ExerciseInsight(
+                exercise_id=exercise_id,
+                sessions_used=len(sessions),
+                last_used_at=ordered[0][0],
+                last3_best=best_sets,
+            )
+        )
+    out.sort(key=lambda e: e.last_used_at, reverse=True)
+    return ClientExerciseInsights(unit=unit, exercises=out)
+
+
+def _set_sort_key(st: SetEntry) -> tuple[float, int]:
+    """Heavier load wins; ties break on reps."""
+    load = to_lbs(total_load(st.weight, st.is_per_side), st.weight_unit or UnitEnum.lbs) if st.weight else 0.0
+    return (load, st.reps or 0)
 
 
 @router.get("/clients/{client_id}/pr-summary", response_model=ClientPRSummary)

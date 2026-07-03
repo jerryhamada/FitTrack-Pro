@@ -21,24 +21,12 @@ import { api } from "../lib/api";
 import { formatWeight } from "../lib/utils";
 import type { EffortType, Exercise, SetEntry, SetStatus, Unit } from "../types";
 import type { RootStackParamList } from "../navigation/types";
+import { MUSCLE_REGIONS as MUSCLES } from "../lib/muscles";
 import { colors, font, radius, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SessionLog">;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const MUSCLES = [
-  "chest",
-  "back",
-  "shoulders",
-  "biceps",
-  "triceps",
-  "quads",
-  "hamstrings",
-  "glutes",
-  "calves",
-  "core",
-  "forearms",
-] as const;
 
 function formatElapsed(startedAt: string, now: number): string {
   const secs = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000));
@@ -76,10 +64,11 @@ export default function SessionLogScreen() {
   const [now, setNow] = useState(Date.now());
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState<string | null>(null); // null = not touched yet
-  const [addedExercises, setAddedExercises] = useState<number[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof api.sessions.complete>> | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   // Live timer — derived from the server-side start timestamp, so it survives
   // backgrounding, navigation, and app restarts.
@@ -108,18 +97,34 @@ export default function SessionLogScreen() {
     return map;
   }, [insights]);
 
-  // Exercises in today's session: derived from logged sets (first-seen order), plus
-  // any just-added ones with no sets yet.
-  const sessionExercises = useMemo(() => {
-    const order: number[] = [];
-    for (const s of session?.sets ?? []) {
-      if (!order.includes(s.exercise_id)) order.push(s.exercise_id);
+  // Exercise membership + grouping come from the server (session_exercises).
+  const membership = useMemo(
+    () => [...(session?.session_exercises ?? [])].sort((a, b) => a.order_index - b.order_index),
+    [session?.session_exercises]
+  );
+
+  // Render blocks: standalone exercises + superset groups (members kept adjacent).
+  const blocks = useMemo(() => {
+    const out: (
+      | { type: "standalone"; exerciseId: number }
+      | { type: "superset"; groupId: string; memberIds: number[] }
+    )[] = [];
+    const emitted = new Set<string>();
+    for (const m of membership) {
+      if (m.superset_group_id) {
+        if (emitted.has(m.superset_group_id)) continue;
+        emitted.add(m.superset_group_id);
+        const memberIds = membership
+          .filter((x) => x.superset_group_id === m.superset_group_id)
+          .sort((a, b) => (a.superset_order ?? 0) - (b.superset_order ?? 0))
+          .map((x) => x.exercise_id);
+        out.push({ type: "superset", groupId: m.superset_group_id, memberIds });
+      } else {
+        out.push({ type: "standalone", exerciseId: m.exercise_id });
+      }
     }
-    for (const id of addedExercises) {
-      if (!order.includes(id)) order.push(id);
-    }
-    return order;
-  }, [session?.sets, addedExercises]);
+    return out;
+  }, [membership]);
 
   const setsByExercise = useMemo(() => {
     const map = new Map<number, SetEntry[]>();
@@ -130,6 +135,12 @@ export default function SessionLogScreen() {
     }
     return map;
   }, [session?.sets]);
+
+  // Exercises eligible to group: standalone only (already-grouped ones can't re-group).
+  const groupableIds = useMemo(
+    () => membership.filter((m) => !m.superset_group_id).map((m) => m.exercise_id),
+    [membership]
+  );
 
   // ----- PR toast -----
   const [prMessage, setPrMessage] = useState<string | null>(null);
@@ -172,6 +183,40 @@ export default function SessionLogScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["session", sessionId] }),
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
+
+  const addExercise = useMutation({
+    mutationFn: (exId: number) => api.sessions.addExercise(sessionId, exId),
+    onSuccess: (updated, exId) => {
+      qc.setQueryData(["session", sessionId], updated);
+      setExpandedId(exId);
+    },
+    onError: (e) => Alert.alert("Error", (e as Error).message),
+  });
+
+  const createSuperset = useMutation({
+    mutationFn: (ids: number[]) => api.sessions.createSuperset(sessionId, ids),
+    onSuccess: (updated) => {
+      qc.setQueryData(["session", sessionId], updated);
+      setSelectMode(false);
+      setSelected(new Set());
+    },
+    onError: (e) => Alert.alert("Error", (e as Error).message),
+  });
+
+  const ungroup = useMutation({
+    mutationFn: (groupId: string) => api.sessions.ungroupSuperset(sessionId, groupId),
+    onSuccess: (updated) => qc.setQueryData(["session", sessionId], updated),
+    onError: (e) => Alert.alert("Error", (e as Error).message),
+  });
+
+  function toggleSelected(exId: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(exId)) next.delete(exId);
+      else next.add(exId);
+      return next;
+    });
+  }
 
   const complete = useMutation({
     mutationFn: () => api.sessions.complete(sessionId),
@@ -317,10 +362,7 @@ export default function SessionLogScreen() {
               <TouchableOpacity
                 key={i}
                 style={styles.plannedRow}
-                onPress={() => {
-                  setAddedExercises((a) => (a.includes(plan.exercise_id) ? a : [...a, plan.exercise_id]));
-                  setExpandedId(plan.exercise_id);
-                }}
+                onPress={() => addExercise.mutate(plan.exercise_id)}
               >
                 <Text style={styles.plannedName}>{plan.exercise_name}</Text>
                 <Text style={styles.plannedTarget}>
@@ -334,35 +376,98 @@ export default function SessionLogScreen() {
         )}
 
         {/* Exercise cards */}
-        {sessionExercises.length === 0 && (
+        {membership.length === 0 && (
           <View style={styles.emptyHint}>
             <Text style={styles.emptyHintTitle}>No exercises yet</Text>
             <Text style={styles.emptyHintSub}>Add the first exercise to start logging sets.</Text>
           </View>
         )}
-        {sessionExercises.map((exId) => (
-          <ExerciseCard
-            key={exId}
-            exercise={exerciseById.get(exId)}
-            exerciseId={exId}
-            sets={setsByExercise.get(exId) ?? []}
-            insight={insightByExercise.get(exId)}
-            expanded={expandedId === exId}
-            onToggle={() => setExpandedId(expandedId === exId ? null : exId)}
-            defaultUnit={client?.preferred_unit ?? "lbs"}
-            logSet={(body) => logSet.mutate(body)}
-            logPending={logSet.isPending}
-            deleteSet={(setId) =>
-              Alert.alert("Delete set?", "", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: () => deleteSet.mutate(setId) },
-              ])
-            }
-          />
-        ))}
+
+        {/* Group-as-superset toolbar */}
+        {!selectMode && groupableIds.length >= 2 && (
+          <TouchableOpacity style={styles.groupToggle} onPress={() => setSelectMode(true)}>
+            <Text style={styles.groupToggleText}>⊟ Group as Superset</Text>
+          </TouchableOpacity>
+        )}
+        {selectMode && (
+          <View style={styles.selectBar}>
+            <Text style={styles.selectBarText}>
+              Select 2+ exercises to superset ({selected.size} chosen)
+            </Text>
+            <View style={styles.selectBarBtns}>
+              <TouchableOpacity
+                onPress={() => {
+                  setSelectMode(false);
+                  setSelected(new Set());
+                }}
+              >
+                <Text style={styles.selectCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={selected.size < 2 || createSuperset.isPending}
+                onPress={() => createSuperset.mutate([...selected])}
+                style={[styles.groupBtn, (selected.size < 2 || createSuperset.isPending) && { opacity: 0.4 }]}
+              >
+                <Text style={styles.groupBtnText}>Group</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {blocks.map((block) =>
+          block.type === "standalone" ? (
+            <ExerciseCard
+              key={`ex-${block.exerciseId}`}
+              exercise={exerciseById.get(block.exerciseId)}
+              exerciseId={block.exerciseId}
+              sets={setsByExercise.get(block.exerciseId) ?? []}
+              insight={insightByExercise.get(block.exerciseId)}
+              expanded={expandedId === block.exerciseId}
+              onToggle={() => setExpandedId(expandedId === block.exerciseId ? null : block.exerciseId)}
+              defaultUnit={client?.preferred_unit ?? "lbs"}
+              logSet={(body) => logSet.mutate(body)}
+              logPending={logSet.isPending}
+              deleteSet={(setId) =>
+                Alert.alert("Delete set?", "", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Delete", style: "destructive", onPress: () => deleteSet.mutate(setId) },
+                ])
+              }
+              selectMode={selectMode}
+              selected={selected.has(block.exerciseId)}
+              onSelectToggle={() => toggleSelected(block.exerciseId)}
+            />
+          ) : (
+            <SupersetCard
+              key={`ss-${block.groupId}`}
+              groupId={block.groupId}
+              memberIds={block.memberIds}
+              exerciseById={exerciseById}
+              setsByExercise={setsByExercise}
+              insightByExercise={insightByExercise}
+              expandedId={expandedId}
+              setExpandedId={setExpandedId}
+              defaultUnit={client?.preferred_unit ?? "lbs"}
+              logSet={(body) => logSet.mutate(body)}
+              logPending={logSet.isPending}
+              deleteSet={(setId) =>
+                Alert.alert("Delete set?", "", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Delete", style: "destructive", onPress: () => deleteSet.mutate(setId) },
+                ])
+              }
+              onUngroup={() =>
+                Alert.alert("Ungroup superset", "Exercises become standalone. Logged sets are kept.", [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Ungroup", onPress: () => ungroup.mutate(block.groupId) },
+                ])
+              }
+            />
+          )
+        )}
 
         {/* Add exercise */}
-        <Btn label="+ Add Exercise" onPress={() => setAddOpen(true)} fullWidth />
+        {!selectMode && <Btn label="+ Add Exercise" onPress={() => setAddOpen(true)} fullWidth />}
 
         <Btn
           label="Cancel session"
@@ -383,8 +488,7 @@ export default function SessionLogScreen() {
         exercises={exercises ?? []}
         insightByExercise={insightByExercise}
         onPick={(id) => {
-          setAddedExercises((a) => (a.includes(id) ? a : [...a, id]));
-          setExpandedId(id);
+          addExercise.mutate(id);
           setAddOpen(false);
         }}
       />
@@ -407,7 +511,7 @@ export default function SessionLogScreen() {
                 label="Volume"
                 value={`${Math.round(summary.total_volume).toLocaleString()} ${summary.total_volume_unit}`}
               />
-              <SummaryStat label="Exercises" value={String(sessionExercises.length)} />
+              <SummaryStat label="Exercises" value={String(membership.length)} />
               <SummaryStat label="Sets" value={String(summary.total_sets)} />
             </View>
             {summary.prs_hit.length > 0 && (
@@ -452,6 +556,13 @@ interface ExerciseCardProps {
   logSet: (body: Parameters<typeof api.sessions.logSet>[1]) => void;
   logPending: boolean;
   deleteSet: (setId: number) => void;
+  selectMode?: boolean;
+  selected?: boolean;
+  onSelectToggle?: () => void;
+  // Superset-member presentation:
+  nested?: boolean; // rendered inside a superset card
+  highlighted?: boolean; // "next up" in the alternating sequence
+  hideSetCount?: boolean; // round counter shown at group level instead
 }
 
 function ExerciseCard({
@@ -465,6 +576,12 @@ function ExerciseCard({
   logSet,
   logPending,
   deleteSet,
+  selectMode,
+  selected,
+  onSelectToggle,
+  nested,
+  highlighted,
+  hideSetCount,
 }: ExerciseCardProps) {
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
@@ -521,27 +638,47 @@ function ExerciseCard({
   const weightStep = unit === "lbs" ? 5 : 2.5;
 
   return (
-    <View style={[cardStyles.card, expanded && cardStyles.cardExpanded]}>
-      <TouchableOpacity style={cardStyles.cardHeader} onPress={onToggle} activeOpacity={0.75}>
+    <View
+      style={[
+        cardStyles.card,
+        nested && cardStyles.cardNested,
+        expanded && cardStyles.cardExpanded,
+        highlighted && cardStyles.cardHighlighted,
+        selected && cardStyles.cardSelected,
+      ]}
+    >
+      <TouchableOpacity
+        style={cardStyles.cardHeader}
+        onPress={selectMode ? onSelectToggle : onToggle}
+        activeOpacity={0.75}
+      >
+        {selectMode && (
+          <View style={[cardStyles.checkbox, selected && cardStyles.checkboxOn]}>
+            {selected && <Text style={cardStyles.checkboxTick}>✓</Text>}
+          </View>
+        )}
         <View style={{ flex: 1, gap: 2 }}>
           <View style={cardStyles.nameRow}>
             <Text style={cardStyles.name} numberOfLines={1}>
               {exercise?.name ?? `Exercise #${exerciseId}`}
             </Text>
             {hasPr && <Text style={cardStyles.trophy}>🏆</Text>}
+            {highlighted && <Text style={cardStyles.nextUp}>next up</Text>}
           </View>
           <View style={cardStyles.metaRow}>
             {exercise?.muscle_group && <Pill>{exercise.muscle_group}</Pill>}
-            <Text style={cardStyles.setCount}>
-              {sets.length} set{sets.length === 1 ? "" : "s"} today
-            </Text>
+            {!hideSetCount && (
+              <Text style={cardStyles.setCount}>
+                {sets.length} set{sets.length === 1 ? "" : "s"} today
+              </Text>
+            )}
           </View>
           {insight?.last3 && <Text style={cardStyles.last3}>Last 3: {insight.last3}</Text>}
         </View>
-        <Text style={cardStyles.chevron}>{expanded ? "▾" : "▸"}</Text>
+        {!selectMode && <Text style={cardStyles.chevron}>{expanded ? "▾" : "▸"}</Text>}
       </TouchableOpacity>
 
-      {expanded && (
+      {expanded && !selectMode && (
         <View style={cardStyles.body}>
           {/* Logged sets */}
           {sets.map((s) => (
@@ -673,6 +810,92 @@ function ExerciseCard({
           <Btn label={logPending ? "Logging..." : "Add Set"} onPress={submit} loading={logPending} fullWidth />
         </View>
       )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Superset card — groups member exercises with a bracket, round counter, and a
+// soft "next up" suggestion. Out-of-order logging is allowed (not gated).
+// ---------------------------------------------------------------------------
+
+interface SupersetCardProps {
+  groupId: string;
+  memberIds: number[];
+  exerciseById: Map<number, Exercise>;
+  setsByExercise: Map<number, SetEntry[]>;
+  insightByExercise: Map<number, { last3: string; sessions_used: number; last_used_at: string }>;
+  expandedId: number | null;
+  setExpandedId: (id: number | null) => void;
+  defaultUnit: Unit;
+  logSet: (body: Parameters<typeof api.sessions.logSet>[1]) => void;
+  logPending: boolean;
+  deleteSet: (setId: number) => void;
+  onUngroup: () => void;
+}
+
+function SupersetCard({
+  groupId,
+  memberIds,
+  exerciseById,
+  setsByExercise,
+  insightByExercise,
+  expandedId,
+  setExpandedId,
+  defaultUnit,
+  logSet,
+  logPending,
+  deleteSet,
+  onUngroup,
+}: SupersetCardProps) {
+  const counts = memberIds.map((id) => (setsByExercise.get(id)?.length ?? 0));
+  const minCount = Math.min(...counts);
+  const maxCount = Math.max(...counts);
+  const totalRounds = Math.max(maxCount, minCount + 1);
+  const currentRound = minCount + 1;
+  // Next expected: first member (in A/B/C order) that's behind the round — i.e. the
+  // earliest with the fewest sets. Soft suggestion only.
+  const nextIdx = counts.findIndex((c) => c === minCount);
+  const nextExerciseId = memberIds[nextIdx];
+  const hasAnySets = maxCount > 0;
+
+  return (
+    <View style={supersetStyles.wrap}>
+      <View style={supersetStyles.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={supersetStyles.label}>Superset {groupId}</Text>
+          <Text style={supersetStyles.round}>
+            {hasAnySets ? `Round ${currentRound} of ${totalRounds}` : "Round 1 — alternate A→B→…"}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={onUngroup} hitSlop={8}>
+          <Text style={supersetStyles.ungroup}>Ungroup</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={supersetStyles.members}>
+        {memberIds.map((id, i) => (
+          <View key={id} style={supersetStyles.memberRow}>
+            <Text style={supersetStyles.memberLetter}>{String.fromCharCode(65 + i)}</Text>
+            <View style={{ flex: 1 }}>
+              <ExerciseCard
+                exercise={exerciseById.get(id)}
+                exerciseId={id}
+                sets={setsByExercise.get(id) ?? []}
+                insight={insightByExercise.get(id)}
+                expanded={expandedId === id}
+                onToggle={() => setExpandedId(expandedId === id ? null : id)}
+                defaultUnit={defaultUnit}
+                logSet={logSet}
+                logPending={logPending}
+                deleteSet={deleteSet}
+                nested
+                hideSetCount
+                highlighted={id === nextExerciseId && hasAnySets}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -828,6 +1051,35 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  groupToggle: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  groupToggleText: { color: colors.muted, fontSize: font.xs, fontWeight: "600" },
+  selectBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.accentDim,
+    borderWidth: 1,
+    borderColor: colors.accent + "40",
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  selectBarText: { color: colors.white, fontSize: font.xs, flex: 1 },
+  selectBarBtns: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  selectCancel: { color: colors.muted, fontSize: font.sm, fontWeight: "600" },
+  groupBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  groupBtnText: { color: "#000", fontSize: font.sm, fontWeight: "700" },
   prToast: {
     position: "absolute",
     top: spacing.sm,
@@ -926,6 +1178,37 @@ const styles = StyleSheet.create({
   summaryPrRow: { fontSize: font.sm, color: colors.white },
 });
 
+const supersetStyles = StyleSheet.create({
+  wrap: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.border,
+    borderTopLeftRadius: radius.lg,
+    borderBottomLeftRadius: radius.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    padding: spacing.sm,
+    gap: spacing.sm,
+  },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.xs },
+  label: { color: colors.accent, fontSize: font.sm, fontWeight: "800", letterSpacing: 0.5 },
+  round: { color: colors.muted, fontSize: font.xs, marginTop: 1 },
+  ungroup: { color: colors.muted, fontSize: font.xs, fontWeight: "600" },
+  members: { gap: spacing.sm },
+  memberRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.xs },
+  memberLetter: {
+    color: colors.accent,
+    fontSize: font.sm,
+    fontWeight: "800",
+    width: 16,
+    textAlign: "center",
+    paddingTop: spacing.base,
+  },
+});
+
 const cardStyles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
@@ -934,6 +1217,27 @@ const cardStyles = StyleSheet.create({
     borderColor: colors.border,
   },
   cardExpanded: { borderColor: colors.accent + "50" },
+  cardNested: { backgroundColor: colors.bg },
+  cardHighlighted: { borderColor: colors.accent, borderWidth: 2 },
+  cardSelected: { borderColor: colors.accent, backgroundColor: colors.accentDim },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkboxTick: { color: "#000", fontSize: font.sm, fontWeight: "800" },
+  nextUp: {
+    fontSize: font.xs,
+    color: colors.accent,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
