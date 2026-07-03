@@ -487,3 +487,133 @@ export interface ClientPortalDashboard {
   key_lifts: PortalKeyLift[];
   recent_workouts: PortalWorkout[];
 }
+
+export interface PortalPlannedExercise {
+  exercise_name: string;
+  target_sets: number | null;
+  target_reps: string | null;
+  target_weight: number | null;
+  target_weight_unit: string | null;
+  notes: string | null;
+}
+
+export interface PortalUpcomingSession {
+  id: number;
+  scheduled_at: string;
+  status: string;
+  trainer_name: string | null;
+  notes: string | null;
+  plan_label: string | null;
+  planned_exercises: PortalPlannedExercise[];
+}
+
+export interface PortalCurrentProgram {
+  name: string;
+  current_week: number | null;
+  days_per_week: number;
+  goal: string | null;
+}
+
+export interface ClientMyWorkouts {
+  trainer_name: string | null;
+  next_session: PortalUpcomingSession | null;
+  upcoming_sessions: PortalUpcomingSession[];
+  current_program: PortalCurrentProgram | null;
+}
+
+export interface PortalExerciseRef {
+  id: number;
+  name: string;
+}
+
+export interface PortalHistoryItem {
+  id: number;
+  started_at: string;
+  duration_seconds: number | null;
+  exercises: PortalExerciseRef[];
+  pr_count: number;
+  total_volume: number;
+  total_volume_unit: string;
+}
+
+export interface ClientHistory {
+  summary: { total_workouts: number; streak_weeks: number; workouts_this_month: number };
+  workouts: PortalHistoryItem[];
+}
+
+export interface PortalHistorySet {
+  set_number: number;
+  weight: number | null;
+  weight_unit: string | null;
+  reps: number | null;
+  effort_value: number | null;
+  effort_type: string | null;
+  status: string;
+  is_pr: boolean;
+  pr_type: string | null;
+}
+
+export interface PortalWorkoutExercise {
+  exercise_id: number;
+  exercise_name: string;
+  sets: PortalHistorySet[];
+}
+
+export interface ClientWorkoutDetail {
+  id: number;
+  started_at: string;
+  duration_seconds: number | null;
+  total_volume: number;
+  total_volume_unit: string;
+  pr_count: number;
+  notes: string | null;
+  exercises: PortalWorkoutExercise[];
+}
+
+export type ProgressRange = "4w" | "3m" | "6m" | "all";
+
+export interface BodyweightLog {
+  id: number;
+  logged_at: string;
+  weight: number;
+  unit: string;
+}
+
+export interface ProgressExerciseOption {
+  exercise_id: number;
+  exercise_name: string;
+  pr_count: number;
+}
+
+export interface StrengthPoint {
+  date: string;
+  value: number;
+  is_pr: boolean;
+}
+
+export interface StrengthSeries {
+  exercise_id: number;
+  exercise_name: string;
+  unit: Unit;
+  points: StrengthPoint[];
+}
+
+export interface ClientProgressStats {
+  streak_weeks: number;
+  total_workouts: number;
+  workouts_this_month: number;
+  total_prs: number;
+  avg_workouts_per_week: number | null;
+  most_improved_lift: string | null;
+  most_improved_exercise_id: number | null;
+}
+
+export interface ClientProgress {
+  unit: Unit;
+  stats: ClientProgressStats;
+  consistency: { week_start: string; workouts: number }[];
+  pr_timeline: PortalPR[];
+  bodyweight: BodyweightLog[];
+  exercise_options: ProgressExerciseOption[];
+  default_exercise_id: number | null;
+}

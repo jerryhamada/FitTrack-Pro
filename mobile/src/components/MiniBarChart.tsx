@@ -5,6 +5,7 @@ import { colors, font, spacing } from "../theme";
 export interface BarDatum {
   label: string; // shown when the bar is tapped
   value: number;
+  marked?: boolean; // renders a 🏆 above the bar (PR moments)
 }
 
 interface MiniBarChartProps {
@@ -32,11 +33,12 @@ export default function MiniBarChart({ data, unit, height = 110 }: MiniBarChartP
             style={styles.barSlot}
             onPress={() => setSelected(selected === i ? null : i)}
           >
+            {d.marked && <Text style={styles.marker}>🏆</Text>}
             <View
               style={[
                 styles.bar,
                 {
-                  height: Math.max(3, (d.value / max) * (height - 8)),
+                  height: Math.max(3, (d.value / max) * (height - (d.marked ? 22 : 8))),
                   backgroundColor:
                     selected === i ? colors.white : d.value > 0 ? colors.accent : colors.border,
                 },
@@ -58,8 +60,9 @@ export default function MiniBarChart({ data, unit, height = 110 }: MiniBarChartP
 const styles = StyleSheet.create({
   readout: { fontSize: font.xs, color: colors.muted },
   chart: { flexDirection: "row", alignItems: "flex-end", gap: 3 },
-  barSlot: { flex: 1, height: "100%", justifyContent: "flex-end" },
+  barSlot: { flex: 1, height: "100%", justifyContent: "flex-end", alignItems: "center" },
   bar: { borderRadius: 2, width: "100%" },
+  marker: { fontSize: 11, marginBottom: 1 },
   axis: { flexDirection: "row", justifyContent: "space-between" },
   axisLabel: { fontSize: font.xs, color: colors.muted },
 });

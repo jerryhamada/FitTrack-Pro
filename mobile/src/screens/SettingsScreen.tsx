@@ -51,6 +51,35 @@ export default function SettingsScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Settings</Text>
 
+      {/* Excluded from the render tree entirely in production builds. */}
+      {IS_DEV_BUILD && (
+        <View style={[styles.section, styles.devSection]}>
+          <Text style={styles.devSectionTitle}>Developer Options</Text>
+          <Text style={styles.sectionHint}>Build: {APP_ENV}</Text>
+          <Text style={styles.devLabel}>Preview as:</Text>
+          <View style={styles.unitRow}>
+            {(["trainer", "client"] as PreviewRole[]).map((role) => {
+              const active = (override ?? "trainer") === role;
+              return (
+                <TouchableOpacity
+                  key={role}
+                  style={[styles.unitBtn, active && styles.devBtnActive]}
+                  onPress={() => setOverride(role === "trainer" ? null : role)}
+                >
+                  <Text style={[styles.unitBtnText, active && { color: "#000" }]}>
+                    {role === "trainer" ? "Trainer" : "Client"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.sectionHint}>
+            Dev only — switches which view renders for this account. Session-only; resets on
+            logout, never saved to the database.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Branding</Text>
         <Text style={styles.sectionHint}>
@@ -136,35 +165,6 @@ export default function SettingsScreen() {
         }
         fullWidth
       />
-
-      {/* Excluded from the render tree entirely in production builds. */}
-      {IS_DEV_BUILD && (
-        <View style={[styles.section, styles.devSection]}>
-          <Text style={styles.devSectionTitle}>Developer Options</Text>
-          <Text style={styles.sectionHint}>Build: {APP_ENV}</Text>
-          <Text style={styles.devLabel}>Preview as:</Text>
-          <View style={styles.unitRow}>
-            {(["trainer", "client"] as PreviewRole[]).map((role) => {
-              const active = (override ?? "trainer") === role;
-              return (
-                <TouchableOpacity
-                  key={role}
-                  style={[styles.unitBtn, active && styles.devBtnActive]}
-                  onPress={() => setOverride(role === "trainer" ? null : role)}
-                >
-                  <Text style={[styles.unitBtnText, active && { color: "#000" }]}>
-                    {role === "trainer" ? "Trainer" : "Client"}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <Text style={styles.sectionHint}>
-            Dev only — switches which view renders for this account. Session-only; resets on
-            logout, never saved to the database.
-          </Text>
-        </View>
-      )}
     </ScrollView>
   );
 }

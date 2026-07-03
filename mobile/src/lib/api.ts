@@ -1,8 +1,15 @@
 import type {
   ActivityEvent,
+  ClientHistory,
+  ClientProgress,
+  ClientMyWorkouts,
+  ClientWorkoutDetail,
   ClientPortalDashboard,
   Notification,
+  ProgressRange,
   RepeatRule,
+  StrengthSeries,
+  BodyweightLog,
   ScheduledSession,
   CalendarResponse,
   Client,
@@ -245,6 +252,20 @@ export const api = {
   clientPortal: {
     dashboard: (clientId?: number): Promise<ClientPortalDashboard> =>
       req<ClientPortalDashboard>(`/client-portal/dashboard${qs({ client_id: clientId })}`),
+    myWorkouts: (clientId?: number): Promise<ClientMyWorkouts> =>
+      req<ClientMyWorkouts>(`/client-portal/my-workouts${qs({ client_id: clientId })}`),
+    history: (clientId?: number): Promise<ClientHistory> =>
+      req<ClientHistory>(`/client-portal/history${qs({ client_id: clientId })}`),
+    workoutDetail: (workoutId: number, clientId?: number): Promise<ClientWorkoutDetail> =>
+      req<ClientWorkoutDetail>(`/client-portal/workouts/${workoutId}${qs({ client_id: clientId })}`),
+    progress: (range: ProgressRange = "all", clientId?: number): Promise<ClientProgress> =>
+      req<ClientProgress>(`/client-portal/progress${qs({ range, client_id: clientId })}`),
+    strengthSeries: (exerciseId: number, range: ProgressRange = "all", clientId?: number): Promise<StrengthSeries> =>
+      req<StrengthSeries>(
+        `/client-portal/progress/strength${qs({ exercise_id: exerciseId, range, client_id: clientId })}`
+      ),
+    logBodyweight: (weight: number, clientId?: number): Promise<BodyweightLog> =>
+      req<BodyweightLog>(`/client-portal/bodyweight${qs({ client_id: clientId })}`, jsonBody("POST", { weight })),
   },
 
   notifications: {

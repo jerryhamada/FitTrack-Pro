@@ -1,3 +1,4 @@
+import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -43,8 +44,8 @@ function sessionDayLabel(iso: string): string {
  * server-side to the logged-in client.
  */
 export default function ClientDashboardScreen() {
+  const navigation = useNavigation();
   const scrollRef = useRef<ScrollView>(null);
-  const [activityY, setActivityY] = useState(0);
   const [progressY, setProgressY] = useState(0);
   const [now, setNow] = useState(Date.now());
 
@@ -206,7 +207,7 @@ export default function ClientDashboardScreen() {
           {/* Bodyweight trend: needs client-logged bodyweight (Phase 2, client-controlled) */}
 
           {/* Recent activity */}
-          <View style={styles.card} onLayout={(e) => setActivityY(e.nativeEvent.layout.y)}>
+          <View style={styles.card}>
             <Text style={styles.cardTitle}>Recent activity</Text>
             {data.recent_workouts.map((w) => (
               <View key={w.id} style={styles.activityRow}>
@@ -224,7 +225,7 @@ export default function ClientDashboardScreen() {
                 )}
               </View>
             ))}
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate("History" as never)}>
               <Text style={styles.link}>View full history ›</Text>
             </TouchableOpacity>
           </View>
@@ -233,7 +234,7 @@ export default function ClientDashboardScreen() {
           <View style={styles.quickRow}>
             <TouchableOpacity
               style={styles.quickBtn}
-              onPress={() => scrollRef.current?.scrollTo({ y: activityY, animated: true })}
+              onPress={() => navigation.navigate("My Workouts" as never)}
             >
               <Text style={styles.quickText}>My Workouts</Text>
             </TouchableOpacity>
