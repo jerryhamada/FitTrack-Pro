@@ -18,6 +18,7 @@ from ..models.roster import Client
 from ..models.schedule import ScheduledSession
 from ..models.sessions import SessionExercise, SetEntry, WorkoutSession
 from ..schemas.sessions import (
+    ActiveSessionOut,
     AddSessionExerciseIn,
     MoveExerciseIn,
     PlannedExerciseOut,
@@ -121,6 +122,31 @@ def _get_session_or_404(db: Session, trainer_id: int, session_id: int) -> Workou
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@router.get("/sessions/active", response_model=ActiveSessionOut | None)
+def get_active_session(trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)):
+    """The trainer's most recently started in-progress session (if any), across all
+    clients. Powers the "Current Workout" button's resume-vs-start-fresh choice."""
+    session = (
+        db.query(WorkoutSession)
+        .join(Client, WorkoutSession.client_id == Client.id)
+        .filter(Client.trainer_id == trainer.id, WorkoutSession.ended_at.is_(None))
+        # started_at alone can tie (Postgres now() is constant per transaction), so
+        # break ties on id to deterministically pick the most-recently-created one.
+        .order_by(WorkoutSession.started_at.desc(), WorkoutSession.id.desc())
+        .first()
+    )
+    if session is None:
+        return None
+    client = db.query(Client).filter(Client.id == session.client_id).first()
+    return ActiveSessionOut(
+        id=session.id,
+        client_id=session.client_id,
+        client_name=client.name if client else "",
+        label=session.label,
+        started_at=session.started_at,
+    )
 
 
 @router.post("/sessions", response_model=SessionOut, status_code=201)

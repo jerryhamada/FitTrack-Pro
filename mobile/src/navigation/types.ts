@@ -16,13 +16,18 @@ export type RootStackParamList = {
   SessionSummary: { sessionId: number; summary?: SessionSummary; clientId?: number };
   ProgramsList: undefined;
   ProgramBuilder: { programId?: number };
+  // Not currently linked from any tab or menu — kept reachable in case Schedule
+  // gets a re-entry point later. Not deleted, just unlinked per product request.
+  Schedule: undefined;
+  Activity: undefined;
 };
 
 export type TabParamList = {
   DashboardTab: undefined;
   ClientsTab: { filter?: "active" | "inactive"; autoFocusSearch?: boolean } | undefined;
+  // Dummy tab — its tabBarButton is fully overridden to a raised action button
+  // that never actually navigates to this screen. See navigation/index.tsx.
+  CurrentWorkoutTab: undefined;
   ExercisesTab: undefined;
-  ScheduleTab: undefined;
-  ActivityTab: undefined;
   SettingsTab: undefined;
 };

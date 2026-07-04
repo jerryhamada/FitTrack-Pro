@@ -220,7 +220,14 @@ export default function SessionLogScreen() {
 
   const complete = useMutation({
     mutationFn: () => api.sessions.complete(sessionId),
-    onSuccess: (s) => setSummary(s), // slide-up summary sheet; navigation happens on Save
+    onSuccess: (s) => {
+      // The workout is done on the backend the instant this succeeds — invalidate
+      // right here rather than waiting for "Save Workout", so the tab bar's
+      // current-workout button resets even if the summary sheet gets dismissed
+      // some other way (swipe/backdrop) instead of via that button.
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      setSummary(s); // slide-up summary sheet; navigation happens on Save
+    },
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
 
@@ -229,6 +236,7 @@ export default function SessionLogScreen() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["client-sessions"] });
       qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
       if (client) {
         navigation.replace("ClientProfile", { clientId: client.id });
       } else {
@@ -252,15 +260,15 @@ export default function SessionLogScreen() {
 
   function saveWorkout() {
     const done = () => {
-      for (const key of ["clients", "dashboard", "client-sessions", "overview-stats", "weekly-stats", "pr-summary", "prs", "exercise-insights", "schedule"]) {
+      for (const key of ["clients", "dashboard", "client-sessions", "overview-stats", "weekly-stats", "pr-summary", "prs", "exercise-insights", "schedule", "sessions"]) {
         qc.invalidateQueries({ queryKey: [key] });
       }
+      navigation.replace("SessionSummary", {
+        sessionId,
+        summary: summary ?? undefined,
+        clientId: client?.id,
+      });
       setSummary(null);
-      if (client) {
-        navigation.replace("ClientProfile", { clientId: client.id });
-      } else {
-        navigation.navigate("MainTabs");
-      }
     };
     if (notes !== null && notes !== (session?.notes ?? "")) {
       saveNotes.mutate(notes, { onSettled: done });
@@ -269,9 +277,23 @@ export default function SessionLogScreen() {
     }
   }
 
-  // Finish button in the nav header — always accessible.
+  // Finish button in the nav header — always accessible while logging. Once the
+  // workout is complete and the summary is showing, there's nothing left to
+  // "finish" or go back from — the only way forward is the Complete button on
+  // the summary itself, so the header back chevron and swipe-back gesture are
+  // disabled too (no accidental exit without completing the save step).
   useEffect(() => {
+    if (summary !== null) {
+      navigation.setOptions({
+        headerRight: () => null,
+        headerLeft: () => null,
+        gestureEnabled: false,
+      });
+      return;
+    }
     navigation.setOptions({
+      headerLeft: undefined,
+      gestureEnabled: true,
       headerRight: () => (
         <TouchableOpacity onPress={finishPressed} disabled={complete.isPending}>
           <Text style={{ color: colors.accent, fontWeight: "700", fontSize: font.base }}>
@@ -281,7 +303,7 @@ export default function SessionLogScreen() {
       ),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, session?.sets.length, complete.isPending]);
+  }, [navigation, session?.sets.length, complete.isPending, summary]);
 
   if (isLoading || !session) return <Spinner />;
 
@@ -493,8 +515,9 @@ export default function SessionLogScreen() {
         }}
       />
 
-      {/* Finish summary sheet */}
-      <BottomSheet visible={summary !== null} onClose={() => setSummary(null)}>
+      {/* Finish summary sheet — not dismissable via backdrop/back gesture, matching
+          the header lockout above: Complete Workout is the only way out. */}
+      <BottomSheet visible={summary !== null} onClose={() => setSummary(null)} dismissable={false}>
         {summary && (
           <View style={{ gap: spacing.md }}>
             <Text style={styles.summaryTitle}>Workout complete 🎉</Text>
@@ -533,7 +556,7 @@ export default function SessionLogScreen() {
               placeholderTextColor={colors.muted}
               multiline
             />
-            <Btn label="Save Workout" onPress={saveWorkout} loading={saveNotes.isPending} fullWidth />
+            <Btn label="Complete Workout" onPress={saveWorkout} loading={saveNotes.isPending} fullWidth />
           </View>
         )}
       </BottomSheet>

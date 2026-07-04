@@ -13,6 +13,14 @@ class SessionStart(BaseModel):
     label: str | None = None
 
 
+class ActiveSessionOut(BaseModel):
+    id: int
+    client_id: int
+    client_name: str
+    label: str | None
+    started_at: datetime
+
+
 class SessionUpdate(BaseModel):
     label: str | None = None
     notes: str | None = None

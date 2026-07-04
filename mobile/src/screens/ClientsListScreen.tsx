@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import EmptyState from "../components/EmptyState";
@@ -18,6 +18,7 @@ type Route = RouteProp<RootStackParamList, "ClientsList">;
 
 export default function ClientsListScreen() {
   const navigation = useNavigation<Nav>();
+  const qc = useQueryClient();
   const { params } = useRoute<Route>();
   const pick = params?.pick ?? false;
   const inactiveOnly = params?.filter === "inactive";
@@ -36,7 +37,10 @@ export default function ClientsListScreen() {
 
   const startSession = useMutation({
     mutationFn: (clientId: number) => api.sessions.start(clientId),
-    onSuccess: (session) => navigation.replace("SessionLog", { sessionId: session.id }),
+    onSuccess: (session) => {
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      navigation.replace("SessionLog", { sessionId: session.id });
+    },
   });
 
   const filtered = useMemo(() => {

@@ -1,7 +1,7 @@
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { useRoute, useNavigation, type CompositeNavigationProp, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -68,6 +68,7 @@ const STATUS_OPTIONS: { key: StatusFilter; label: string }[] = [
 
 export default function ClientsScreen() {
   const navigation = useNavigation<Nav>();
+  const qc = useQueryClient();
   const { params } = useRoute<Route>();
   const searchRef = useRef<TextInput>(null);
 
@@ -90,7 +91,10 @@ export default function ClientsScreen() {
 
   const startSession = useMutation({
     mutationFn: (clientId: number) => api.sessions.start(clientId),
-    onSuccess: (session) => navigation.navigate("SessionLog", { sessionId: session.id }),
+    onSuccess: (session) => {
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      navigation.navigate("SessionLog", { sessionId: session.id });
+    },
     onError: (err) => Alert.alert("Error", (err as Error).message),
   });
 

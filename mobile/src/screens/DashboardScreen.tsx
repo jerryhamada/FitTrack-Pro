@@ -55,7 +55,6 @@ export default function DashboardScreen() {
   const quickActions = [
     { label: "Start Workout", onPress: () => navigation.navigate("ClientsList", { pick: true }) },
     { label: "Add Client", onPress: () => navigation.navigate("AddClient") },
-    { label: "Today's Schedule", onPress: () => navigation.navigate("ScheduleTab") },
     { label: "Programs", onPress: () => navigation.navigate("ProgramsList") },
     {
       label: "Search Clients",
@@ -75,19 +74,19 @@ export default function DashboardScreen() {
           key: "today",
           label: "Workouts today",
           value: String(stats.workouts_today),
-          onPress: () => navigation.navigate("ActivityTab"),
+          onPress: () => navigation.navigate("Activity"),
         },
         {
           key: "week",
           label: "This week",
           value: String(stats.workouts_this_week),
-          onPress: () => navigation.navigate("ActivityTab"),
+          onPress: () => navigation.navigate("Activity"),
         },
         {
           key: "alltime",
           label: "All-time workouts",
           value: String(stats.workouts_all_time),
-          onPress: () => navigation.navigate("ActivityTab"),
+          onPress: () => navigation.navigate("Activity"),
         },
         {
           key: "adherence",
@@ -100,12 +99,6 @@ export default function DashboardScreen() {
           label: "PRs (7d)",
           value: String(stats.prs_last_7_days),
           onPress: () => navigation.navigate("RecentPRs"),
-        },
-        {
-          key: "upcoming",
-          label: "Upcoming (7d)",
-          value: String(stats.upcoming_sessions),
-          onPress: () => navigation.navigate("ScheduleTab"),
         },
         {
           key: "inactive",

@@ -49,7 +49,10 @@ export default function ProgramsTab({ client }: { client: Client }) {
   const startFromDay = useMutation({
     mutationFn: (vars: { dayId: number; label: string }) =>
       api.sessions.start(client.id, vars.dayId, vars.label),
-    onSuccess: (session) => navigation.navigate("SessionLog", { sessionId: session.id }),
+    onSuccess: (session) => {
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      navigation.navigate("SessionLog", { sessionId: session.id });
+    },
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
 

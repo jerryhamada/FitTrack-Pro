@@ -59,7 +59,8 @@ export default function ExerciseLibraryScreen() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // All muscle sections start minimized — tap a section to expand it.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(ALL_MUSCLES));
   const [detail, setDetail] = useState<Exercise | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);

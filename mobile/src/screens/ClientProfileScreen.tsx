@@ -51,7 +51,10 @@ export default function ClientProfileScreen() {
 
   const startSession = useMutation({
     mutationFn: () => api.sessions.start(clientId),
-    onSuccess: (session) => navigation.navigate("SessionLog", { sessionId: session.id }),
+    onSuccess: (session) => {
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      navigation.navigate("SessionLog", { sessionId: session.id });
+    },
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
 

@@ -1,8 +1,8 @@
-import { useNavigation, useRoute } from "@react-navigation/native";
-import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useRoute } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import Btn from "../components/Btn";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
 import StatCard from "../components/StatCard";
@@ -13,27 +13,47 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SessionSummary">;
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+function exerciseBreakdown(session: WorkoutSession) {
+  return [...session.session_exercises]
+    .sort((a, b) => a.order_index - b.order_index)
+    .map((m) => {
+      const sets = session.sets.filter((s) => s.exercise_id === m.exercise_id);
+      const working = sets.filter((s) => s.status !== "skipped");
+      const best = working.reduce<(typeof working)[number] | null>((top, s) => {
+        if (s.weight == null || s.reps == null) return top;
+        if (!top || s.weight * s.reps > (top.weight ?? 0) * (top.reps ?? 0)) return s;
+        return top;
+      }, null);
+      return {
+        exerciseId: m.exercise_id,
+        name: m.exercise_name,
+        workingSets: working.length,
+        best,
+      };
+    });
+}
 
 export default function SessionSummaryScreen() {
   const route = useRoute<Props["route"]>();
-  const navigation = useNavigation<Nav>();
-  const { sessionId, summary: passedSummary, clientId: passedClientId } = route.params;
+  const { sessionId, summary: passedSummary } = route.params;
 
+  // Always fetch the full session — the aggregate summary doesn't carry the
+  // per-exercise breakdown this screen needs, but this query is almost always
+  // a cache hit since SessionLogScreen just fetched the same key.
   const { data: session, isLoading } = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => api.sessions.get(sessionId),
-    enabled: !passedSummary,
   });
 
-  if (!passedSummary && (isLoading || !session)) return <Spinner />;
+  const exercises = useMemo(() => (session ? exerciseBreakdown(session) : []), [session]);
 
-  const summary: SessionSummary = passedSummary ?? deriveSummary(session!);
-  const clientId = passedClientId ?? session?.client_id;
+  if (isLoading || !session) return <Spinner />;
+
+  const summary: SessionSummary = passedSummary ?? deriveSummary(session);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Session Complete</Text>
       <Text style={styles.subtitle}>Nice work — here's how it went.</Text>
 
       <View style={styles.statsGrid}>
@@ -70,23 +90,24 @@ export default function SessionSummaryScreen() {
         </View>
       )}
 
-      <Btn
-        label="Back to Client"
-        onPress={() => {
-          if (clientId) {
-            navigation.navigate("ClientProfile", { clientId });
-          } else {
-            navigation.navigate("MainTabs");
-          }
-        }}
-        fullWidth
-      />
-      <Btn
-        label="Dashboard"
-        variant="secondary"
-        onPress={() => navigation.navigate("MainTabs")}
-        fullWidth
-      />
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Exercises</Text>
+        {exercises.map((ex) => (
+          <View key={ex.exerciseId} style={styles.exerciseRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.exerciseName}>{ex.name}</Text>
+              {ex.best && (
+                <Text style={styles.exerciseBest}>
+                  Best: {formatWeight(ex.best.weight, ex.best.weight_unit)} × {ex.best.reps}
+                </Text>
+              )}
+            </View>
+            <Text style={styles.exerciseSets}>
+              {ex.workingSets} {ex.workingSets === 1 ? "set" : "sets"}
+            </Text>
+          </View>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -114,7 +135,6 @@ function deriveSummary(session: WorkoutSession): SessionSummary {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.base, gap: spacing.base },
-  title: { fontSize: font.xl, fontWeight: "700", color: colors.white },
   subtitle: { fontSize: font.sm, color: colors.muted },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   card: {
@@ -137,4 +157,15 @@ const styles = StyleSheet.create({
   prName: { fontSize: font.sm, fontWeight: "500", color: colors.white, flex: 1 },
   prRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   prValue: { fontSize: font.sm, color: colors.muted },
+  exerciseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.bg,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+  },
+  exerciseName: { fontSize: font.sm, fontWeight: "500", color: colors.white },
+  exerciseBest: { fontSize: font.xs, color: colors.muted, marginTop: 2 },
+  exerciseSets: { fontSize: font.sm, color: colors.accent, fontWeight: "600" },
 });

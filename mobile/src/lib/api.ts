@@ -1,4 +1,5 @@
 import type {
+  ActiveSession,
   ActivityEvent,
   ClientHistory,
   ClientProgress,
@@ -219,6 +220,7 @@ export const api = {
   },
 
   sessions: {
+    active: (): Promise<ActiveSession | null> => req<ActiveSession | null>("/sessions/active"),
     start: (clientId: number, clientProgramDayId?: number, label?: string): Promise<WorkoutSession> =>
       req<WorkoutSession>(
         "/sessions",

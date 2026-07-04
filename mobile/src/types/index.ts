@@ -221,6 +221,14 @@ export interface SessionExercise {
   superset_order: number | null;
 }
 
+export interface ActiveSession {
+  id: number;
+  client_id: number;
+  client_name: string;
+  label: string | null;
+  started_at: string;
+}
+
 export interface WorkoutSession {
   id: number;
   client_id: number;

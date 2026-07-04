@@ -5,12 +5,17 @@ interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  // When false, the backdrop tap and Android hardware-back no longer dismiss
+  // the sheet — used for flows that must be exited via an explicit in-sheet
+  // action instead of an implicit "back" gesture.
+  dismissable?: boolean;
 }
 
-export default function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
+export default function BottomSheet({ visible, onClose, children, dismissable = true }: BottomSheetProps) {
+  const handleClose = dismissable ? onClose : () => {};
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={handleClose} />
       <View style={styles.sheet}>{children}</View>
     </Modal>
   );
