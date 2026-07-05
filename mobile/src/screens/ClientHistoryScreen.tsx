@@ -1,6 +1,8 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,20 +10,75 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import BottomSheet from "../components/BottomSheet";
 import EmptyState from "../components/EmptyState";
 import Spinner from "../components/Spinner";
+import { usePreviewClientId } from "../contexts/PreviewClient";
 import { api } from "../lib/api";
-import { formatDate, formatDuration, formatWeight } from "../lib/utils";
+import { formatDuration } from "../lib/utils";
 import { colors, font, radius, spacing } from "../theme";
-import type { PortalHistorySet, PortalWorkoutExercise, PortalHistoryItem } from "../types";
+import type {
+  DistanceUnit,
+  PortalHistoryItem,
+  PortalHistorySet,
+  PortalWorkoutExercise,
+  Unit,
+} from "../types";
+
+const GOLD = "#eab308";
+const FLAME = "#f97316";
+const META = "#c7cbc7";
+
+type RangeKey = "all" | "30" | "90";
+type SortKey = "newest" | "oldest";
+
+const RANGES: { key: RangeKey; label: string }[] = [
+  { key: "all", label: "All time" },
+  { key: "30", label: "Last 30 days" },
+  { key: "90", label: "Last 90 days" },
+];
+
+// ---------- formatting helpers ----------
+
+function historyDateLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const full = d
+    .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    .toUpperCase();
+  if (d.toDateString() === today.toDateString()) return `TODAY · ${full}`;
+  if (d.toDateString() === yesterday.toDateString()) return `YESTERDAY · ${full}`;
+  return full;
+}
+
+function volumeLabel(v: number, unit: string): string {
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k ${unit}` : `${Math.round(v)} ${unit}`;
+}
+
+function setValueLabel(st: PortalHistorySet): string {
+  if (st.height != null) {
+    const h = st.height % 1 === 0 ? st.height : st.height.toFixed(1);
+    return `${h} ${(st.height_unit as DistanceUnit) ?? "in"}`;
+  }
+  if (st.weight != null) {
+    const w = st.weight % 1 === 0 ? st.weight : st.weight.toFixed(1);
+    return `${w} ${(st.weight_unit as Unit) ?? "lbs"}`;
+  }
+  return "BW";
+}
+
+function monthKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+// ---------- superset-aware detail grouping ----------
 
 type DetailBlock =
   | { type: "standalone"; ex: PortalWorkoutExercise }
   | { type: "superset"; groupId: string; members: PortalWorkoutExercise[]; rounds: number };
 
-/** Group superset members into a single unit (kept adjacent, ordered A/B/C);
- *  standalone exercises pass through. Never flattens groups. */
 function buildDetailBlocks(exercises: PortalWorkoutExercise[]): DetailBlock[] {
   const blocks: DetailBlock[] = [];
   const emitted = new Set<string>();
@@ -41,44 +98,10 @@ function buildDetailBlocks(exercises: PortalWorkoutExercise[]): DetailBlock[] {
   return blocks;
 }
 
-function SetLine({ st }: { st: PortalHistorySet }) {
-  return (
-    <View style={styles.detailSetRow}>
-      <Text style={styles.detailSetNum}>#{st.set_number}</Text>
-      <Text style={styles.detailSetValue}>
-        {st.weight != null ? formatWeight(st.weight, (st.weight_unit as "lbs" | "kg" | null) ?? null) : "BW"}
-        {st.reps != null ? ` × ${st.reps}` : ""}
-        {st.effort_value != null ? `  ${st.effort_type?.toUpperCase()} ${st.effort_value}` : ""}
-      </Text>
-      {st.is_pr && <Text style={styles.detailSetPr}>🏆</Text>}
-      {st.status !== "completed" && <Text style={styles.detailSetStatus}>{st.status}</Text>}
-    </View>
-  );
-}
-
-const GOLD = "#eab308";
-const FLAME = "#f97316";
-
-type RangeKey = "all" | "30" | "90";
-type SortKey = "newest" | "oldest";
-
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "all", label: "All time" },
-  { key: "30", label: "Last 30 days" },
-  { key: "90", label: "Last 90 days" },
-];
-
-function monthKey(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-}
-
-function condensedExercises(w: PortalHistoryItem): string {
-  const names = w.exercises.slice(0, 3).map((e) => e.name.split(" (")[0]);
-  const more = w.exercises.length > 3 ? ` +${w.exercises.length - 3}` : "";
-  return names.join(" · ") + more;
-}
+// ---------- screen ----------
 
 export default function ClientHistoryScreen() {
+  const clientId = usePreviewClientId();
   const [filterOpen, setFilterOpen] = useState(false);
   const [range, setRange] = useState<RangeKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
@@ -86,11 +109,10 @@ export default function ClientHistoryScreen() {
   const [detailId, setDetailId] = useState<number | null>(null);
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ["client-portal", "history"],
-    queryFn: () => api.clientPortal.history(),
+    queryKey: ["client-portal", "history", clientId],
+    queryFn: () => api.clientPortal.history(clientId),
   });
 
-  // Distinct exercises across all workouts, for the filter picker.
   const exerciseOptions = useMemo(() => {
     const map = new Map<number, string>();
     for (const w of data?.workouts ?? []) for (const e of w.exercises) map.set(e.id, e.name);
@@ -111,7 +133,6 @@ export default function ClientHistoryScreen() {
     return list;
   }, [data, range, exerciseId, sort]);
 
-  // Group filtered list by month (order preserved from the sort above).
   const groups = useMemo(() => {
     const out: { month: string; items: PortalHistoryItem[] }[] = [];
     for (const w of filtered) {
@@ -155,21 +176,21 @@ export default function ClientHistoryScreen() {
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.muted} />}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>History</Text>
+          <View>
+            <Text style={styles.title}>History</Text>
+            <Text style={styles.subtitle}>Tap a workout to see the full log</Text>
+          </View>
           <TouchableOpacity style={styles.filterBtn} onPress={() => setFilterOpen(true)}>
-            <Text style={{ fontSize: 16 }}>⚙</Text>
+            <MaterialCommunityIcons name="tune-variant" size={18} color={colors.muted} />
             {filtersActive && <View style={styles.filterDot} />}
           </TouchableOpacity>
         </View>
 
         {isEmpty ? (
-          <EmptyState
-            title="No workouts logged yet"
-            subtitle="Your first session is coming up! 💪"
-          />
+          <EmptyState title="No workouts logged yet" subtitle="Your first session is coming up! 💪" />
         ) : (
           <>
-            {/* Summary strip — streak/consistency first, volume stays off the headline */}
+            {/* Summary strip */}
             <View style={styles.summaryRow}>
               <View style={[styles.summaryCard, { borderColor: FLAME + "50" }]}>
                 <Text style={styles.summaryEmoji}>🔥</Text>
@@ -186,7 +207,6 @@ export default function ClientHistoryScreen() {
               </View>
             </View>
 
-            {/* Grouped list */}
             {groups.length === 0 ? (
               <EmptyState
                 title="No workouts match your filters"
@@ -209,21 +229,25 @@ export default function ClientHistoryScreen() {
                       activeOpacity={0.8}
                     >
                       <View style={styles.workoutTop}>
-                        <Text style={styles.workoutDate}>{formatDate(w.started_at)}</Text>
-                        <Text style={styles.workoutDuration}>{formatDuration(w.duration_seconds)}</Text>
-                      </View>
-                      <Text style={styles.workoutExercises} numberOfLines={1}>
-                        {condensedExercises(w)}
-                      </Text>
-                      <View style={styles.workoutBottom}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.workoutDate}>{historyDateLabel(w.started_at)}</Text>
+                          <Text style={styles.workoutTitle}>{w.title}</Text>
+                        </View>
                         {w.pr_count > 0 && (
-                          <Text style={styles.prBadge}>
-                            🏆 {w.pr_count} PR{w.pr_count === 1 ? "" : "s"}
-                          </Text>
+                          <View style={styles.prPill}>
+                            <Text style={styles.prPillText}>
+                              🏆 {w.pr_count} PR{w.pr_count === 1 ? "" : "s"}
+                            </Text>
+                          </View>
                         )}
-                        <Text style={styles.volume}>
-                          {Math.round(w.total_volume).toLocaleString()} {w.total_volume_unit} volume
-                        </Text>
+                      </View>
+                      <View style={styles.metaRow}>
+                        <MetaChip icon="clock-outline" label={formatDuration(w.duration_seconds)} />
+                        <MetaChip icon="dumbbell" label={volumeLabel(w.total_volume, w.total_volume_unit)} />
+                        <MetaChip
+                          icon="format-list-bulleted"
+                          label={`${w.exercises.length} exercise${w.exercises.length === 1 ? "" : "s"}`}
+                        />
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -292,47 +316,111 @@ export default function ClientHistoryScreen() {
         </TouchableOpacity>
       </BottomSheet>
 
-      {/* Read-only workout detail */}
-      <WorkoutDetailSheet workoutId={detailId} onClose={() => setDetailId(null)} />
+      {/* Full-screen read-only workout detail */}
+      <WorkoutDetailModal workoutId={detailId} clientId={clientId} onClose={() => setDetailId(null)} />
     </>
   );
 }
 
-function WorkoutDetailSheet({ workoutId, onClose }: { workoutId: number | null; onClose: () => void }) {
+function MetaChip({
+  icon,
+  label,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+}) {
+  return (
+    <View style={styles.metaChip}>
+      <MaterialCommunityIcons name={icon} size={14} color={colors.muted} />
+      <Text style={styles.metaText}>{label}</Text>
+    </View>
+  );
+}
+
+function SetRow({ st, isPR }: { st: PortalHistorySet; isPR: boolean }) {
+  return (
+    <View style={[styles.setRow, isPR && styles.setRowPR]}>
+      <Text style={styles.setNum}>Set {st.set_number}</Text>
+      <Text style={[styles.setValue, isPR && { color: GOLD }]}>
+        {setValueLabel(st)}
+        {st.reps != null ? ` × ${st.reps}` : ""}
+        {st.effort_value != null ? `  ${st.effort_type?.toUpperCase()} ${st.effort_value}` : ""}
+      </Text>
+      {isPR && <Text style={styles.setPrTag}>🏆 PR</Text>}
+      {st.status !== "completed" && <Text style={styles.setStatus}>{st.status}</Text>}
+    </View>
+  );
+}
+
+function WorkoutDetailModal({
+  workoutId,
+  clientId,
+  onClose,
+}: {
+  workoutId: number | null;
+  clientId: number | undefined;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
   const { data, isLoading } = useQuery({
-    queryKey: ["client-portal", "workout", workoutId],
-    queryFn: () => api.clientPortal.workoutDetail(workoutId!),
+    queryKey: ["client-portal", "workout", workoutId, clientId],
+    queryFn: () => api.clientPortal.workoutDetail(workoutId!, clientId),
     enabled: workoutId != null,
   });
 
   return (
-    <BottomSheet visible={workoutId != null} onClose={onClose}>
-      {isLoading || !data ? (
-        <Spinner />
-      ) : (
-        <View style={{ gap: spacing.sm }}>
-          <Text style={styles.sheetTitle}>{formatDate(data.started_at)}</Text>
-          <View style={styles.detailMeta}>
-            <Text style={styles.detailMetaText}>{formatDuration(data.duration_seconds)}</Text>
-            {data.pr_count > 0 && <Text style={styles.detailPr}>🏆 {data.pr_count} PR{data.pr_count === 1 ? "" : "s"}</Text>}
-            <Text style={styles.detailMetaText}>
-              {Math.round(data.total_volume).toLocaleString()} {data.total_volume_unit}
-            </Text>
-          </View>
-          {data.notes && <Text style={styles.detailNotes}>“{data.notes}”</Text>}
-          <ScrollView style={{ maxHeight: 440 }}>
-            {buildDetailBlocks(data.exercises).map((block, bi) =>
+    <Modal visible={workoutId != null} animationType="slide" onRequestClose={onClose} transparent={false}>
+      <View style={[styles.modal, { paddingTop: insets.top }]}>
+        {isLoading || !data ? (
+          <Spinner />
+        ) : (
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <TouchableOpacity style={styles.backRow} onPress={onClose} activeOpacity={0.7}>
+              <MaterialCommunityIcons name="chevron-left" size={22} color={colors.accent} />
+              <Text style={styles.backText}>History</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.detailDate}>{historyDateLabel(data.started_at)}</Text>
+            <Text style={styles.detailTitle}>{data.title}</Text>
+
+            <View style={styles.detailStatsRow}>
+              <View style={styles.detailStat}>
+                <Text style={styles.detailStatValue}>{formatDuration(data.duration_seconds)}</Text>
+                <Text style={styles.detailStatLabel}>duration</Text>
+              </View>
+              <View style={styles.detailStat}>
+                <Text style={styles.detailStatValue}>
+                  {volumeLabel(data.total_volume, data.total_volume_unit)}
+                </Text>
+                <Text style={styles.detailStatLabel}>total volume</Text>
+              </View>
+              <View style={[styles.detailStat, styles.detailStatPr]}>
+                <Text style={[styles.detailStatValue, { color: GOLD }]}>{data.pr_count}</Text>
+                <Text style={[styles.detailStatLabel, { color: "#c9b25a" }]}>PRs</Text>
+              </View>
+            </View>
+
+            {data.notes ? (
+              <View style={styles.notesCard}>
+                <Text style={styles.notesText}>“{data.notes}”</Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.exercisesLabel}>EXERCISES</Text>
+
+            {buildDetailBlocks(data.exercises).map((block) =>
               block.type === "standalone" ? (
-                <View key={`ex-${block.ex.exercise_id}`} style={styles.detailExercise}>
-                  <Text style={styles.detailExName}>{block.ex.exercise_name}</Text>
+                <View key={`ex-${block.ex.exercise_id}`} style={styles.exerciseCard}>
+                  <Text style={styles.exerciseName}>{block.ex.exercise_name}</Text>
                   {block.ex.sets.map((st) => (
-                    <SetLine key={st.set_number} st={st} />
+                    <SetRow key={st.set_number} st={st} isPR={st.is_pr} />
                   ))}
                 </View>
               ) : (
-                <View key={`ss-${block.groupId}`} style={styles.superset}>
+                <View key={`ss-${block.groupId}`} style={[styles.exerciseCard, styles.supersetCard]}>
                   <Text style={styles.supersetLabel}>
-                    Superset {block.groupId}: {block.members.map((m) => m.exercise_name.split(" (")[0]).join(" + ")}
+                    Superset {block.groupId} ·{" "}
+                    {block.members.map((m) => m.exercise_name.split(" (")[0]).join(" + ")}
                   </Text>
                   {Array.from({ length: block.rounds }, (_, r) => (
                     <View key={r} style={styles.roundBlock}>
@@ -341,17 +429,15 @@ function WorkoutDetailSheet({ workoutId, onClose }: { workoutId: number | null; 
                         const st = m.sets[r];
                         if (!st) return null;
                         return (
-                          <View key={m.exercise_id} style={styles.roundSetRow}>
+                          <View key={m.exercise_id} style={[styles.roundSetRow, st.is_pr && styles.setRowPR]}>
                             <Text style={styles.roundMember} numberOfLines={1}>
                               {m.exercise_name.split(" (")[0]}
                             </Text>
-                            <Text style={styles.detailSetValue}>
-                              {st.weight != null
-                                ? formatWeight(st.weight, (st.weight_unit as "lbs" | "kg" | null) ?? null)
-                                : "BW"}
+                            <Text style={[styles.setValue, st.is_pr && { color: GOLD }]}>
+                              {setValueLabel(st)}
                               {st.reps != null ? ` × ${st.reps}` : ""}
                             </Text>
-                            {st.is_pr && <Text style={styles.detailSetPr}>🏆</Text>}
+                            {st.is_pr && <Text style={styles.setPrTag}>🏆</Text>}
                           </View>
                         );
                       })}
@@ -360,18 +446,20 @@ function WorkoutDetailSheet({ workoutId, onClose }: { workoutId: number | null; 
                 </View>
               )
             )}
+            <View style={{ height: insets.bottom + spacing.xl }} />
           </ScrollView>
-        </View>
-      )}
-    </BottomSheet>
+        )}
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.base, gap: spacing.base, paddingBottom: 48 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   title: { fontSize: font.xxl, fontWeight: "800", color: colors.white },
+  subtitle: { fontSize: font.sm, color: colors.muted, marginTop: 2 },
   filterBtn: {
     width: 38,
     height: 38,
@@ -415,20 +503,36 @@ const styles = StyleSheet.create({
   },
   workoutCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.lg + 2,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.base,
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  workoutTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  workoutDate: { color: colors.white, fontSize: font.base, fontWeight: "700" },
-  workoutDuration: { color: colors.muted, fontSize: font.sm },
-  workoutExercises: { color: colors.muted, fontSize: font.sm },
-  workoutBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  prBadge: { color: GOLD, fontSize: font.sm, fontWeight: "700" },
-  volume: { color: colors.muted, fontSize: font.xs, marginLeft: "auto" },
+  workoutTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.sm },
+  workoutDate: {
+    color: colors.muted,
+    fontSize: font.xs,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  workoutTitle: { color: colors.white, fontSize: font.lg, fontWeight: "800" },
+  prPill: {
+    backgroundColor: GOLD + "1a",
+    borderWidth: 1,
+    borderColor: GOLD + "59",
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+  },
+  prPillText: { color: GOLD, fontSize: font.xs, fontWeight: "700" },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.base },
+  metaChip: { flexDirection: "row", alignItems: "center", gap: 5 },
+  metaText: { color: META, fontSize: font.sm },
   link: { color: colors.accent, fontSize: font.sm, fontWeight: "600" },
+
+  // filter sheet
   sheetTitle: { color: colors.white, fontSize: font.lg, fontWeight: "700", marginBottom: spacing.xs },
   sheetLabel: {
     color: colors.muted,
@@ -460,31 +564,74 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   doneBtnText: { color: "#000", fontWeight: "700", fontSize: font.base },
-  detailMeta: { flexDirection: "row", gap: spacing.md, alignItems: "center" },
-  detailMetaText: { color: colors.muted, fontSize: font.sm },
-  detailPr: { color: GOLD, fontSize: font.sm, fontWeight: "700" },
-  detailNotes: { color: colors.muted, fontSize: font.sm, fontStyle: "italic" },
-  detailExercise: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border, gap: spacing.xs },
-  detailExName: { color: colors.white, fontSize: font.base, fontWeight: "600" },
-  detailSetRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  detailSetNum: { color: colors.muted, fontSize: font.xs, width: 26 },
-  detailSetValue: { color: colors.white, fontSize: font.sm, flex: 1 },
-  detailSetPr: { fontSize: font.sm },
-  detailSetStatus: { color: colors.muted, fontSize: font.xs, textTransform: "capitalize" },
-  superset: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
-    paddingLeft: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+
+  // detail modal
+  modal: { flex: 1, backgroundColor: colors.bg },
+  modalContent: { padding: spacing.base, paddingTop: spacing.xs },
+  backRow: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm, alignSelf: "flex-start" },
+  backText: { color: colors.accent, fontSize: font.base, fontWeight: "700" },
+  detailDate: {
+    color: colors.muted,
+    fontSize: font.xs,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginTop: spacing.xs,
+  },
+  detailTitle: { color: colors.white, fontSize: font.xxl, fontWeight: "800", marginTop: 3, marginBottom: spacing.base },
+  detailStatsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.base },
+  detailStat: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md + 2,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    gap: 2,
+  },
+  detailStatPr: { backgroundColor: GOLD + "14", borderWidth: 1, borderColor: GOLD + "4d" },
+  detailStatValue: { color: colors.white, fontSize: font.lg, fontWeight: "800" },
+  detailStatLabel: { color: colors.muted, fontSize: font.xs },
+  notesCard: {
+    backgroundColor: colors.accentDim,
+    borderWidth: 1,
+    borderColor: colors.accent + "40",
+    borderRadius: radius.md + 2,
+    padding: spacing.md,
+    marginBottom: spacing.base,
+  },
+  notesText: { color: "#d6ead9", fontSize: font.sm, fontStyle: "italic" },
+  exercisesLabel: {
+    color: colors.muted,
+    fontSize: font.xs,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
+  },
+  exerciseCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.base,
+    marginBottom: spacing.sm,
     gap: spacing.xs,
   },
-  supersetLabel: { color: colors.accent, fontSize: font.sm, fontWeight: "700" },
+  exerciseName: { color: colors.white, fontSize: font.base, fontWeight: "800", marginBottom: 4 },
+  setRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6 },
+  setRowPR: {
+    backgroundColor: GOLD + "10",
+    borderRadius: radius.sm,
+    paddingLeft: spacing.sm,
+    marginLeft: -spacing.sm,
+  },
+  setNum: { color: colors.muted, fontSize: font.sm, width: 52 },
+  setValue: { flex: 1, color: colors.white, fontSize: font.base, fontWeight: "600" },
+  setPrTag: { color: GOLD, fontSize: font.xs, fontWeight: "700" },
+  setStatus: { color: colors.muted, fontSize: font.xs, textTransform: "capitalize" },
+  supersetCard: { borderLeftWidth: 3, borderLeftColor: colors.accent },
+  supersetLabel: { color: colors.accent, fontSize: font.sm, fontWeight: "700", marginBottom: 4 },
   roundBlock: { gap: 2, marginTop: spacing.xs },
   roundLabel: { color: colors.muted, fontSize: font.xs, fontWeight: "600", textTransform: "uppercase" },
-  roundSetRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: spacing.sm },
+  roundSetRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingLeft: spacing.sm, paddingVertical: 3 },
   roundMember: { color: colors.muted, fontSize: font.xs, width: 96 },
+
   errorWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.sm },
   errorEmoji: { fontSize: 40 },
   errorTitle: { fontSize: font.lg, fontWeight: "700", color: colors.white, textAlign: "center" },

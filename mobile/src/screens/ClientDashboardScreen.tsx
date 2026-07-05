@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import {
 } from "react-native";
 import MiniBarChart from "../components/MiniBarChart";
 import Spinner from "../components/Spinner";
+import { usePreviewClientId } from "../contexts/PreviewClient";
 import { api } from "../lib/api";
 import { formatDate, formatDuration } from "../lib/utils";
 import { colors, font, radius, spacing } from "../theme";
@@ -45,13 +47,14 @@ function sessionDayLabel(iso: string): string {
  */
 export default function ClientDashboardScreen() {
   const navigation = useNavigation();
+  const clientId = usePreviewClientId();
   const scrollRef = useRef<ScrollView>(null);
   const [progressY, setProgressY] = useState(0);
   const [now, setNow] = useState(Date.now());
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ["client-portal", "dashboard"],
-    queryFn: () => api.clientPortal.dashboard(),
+    queryKey: ["client-portal", "dashboard", clientId],
+    queryFn: () => api.clientPortal.dashboard(clientId),
   });
 
   // Tick every 30s so the "in Xh Ym" countdown stays honest.
@@ -103,7 +106,7 @@ export default function ClientDashboardScreen() {
           </View>
         </View>
         <TouchableOpacity style={styles.bell}>
-          <Text style={{ fontSize: 16 }}>🔔</Text>
+          <MaterialCommunityIcons name="bell-outline" size={19} color={colors.muted} />
         </TouchableOpacity>
       </View>
 

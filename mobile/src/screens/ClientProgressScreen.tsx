@@ -14,6 +14,7 @@ import BottomSheet from "../components/BottomSheet";
 import EmptyState from "../components/EmptyState";
 import MiniBarChart from "../components/MiniBarChart";
 import Spinner from "../components/Spinner";
+import { usePreviewClientId } from "../contexts/PreviewClient";
 import { api } from "../lib/api";
 import { formatDate } from "../lib/utils";
 import { colors, font, radius, spacing } from "../theme";
@@ -32,6 +33,7 @@ const RANGES: { key: ProgressRange; label: string }[] = [
 
 export default function ClientProgressScreen() {
   const qc = useQueryClient();
+  const clientId = usePreviewClientId();
   const [range, setRange] = useState<ProgressRange>("3m");
   const [exerciseId, setExerciseId] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -39,8 +41,8 @@ export default function ClientProgressScreen() {
   const [bwInput, setBwInput] = useState("");
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ["client-portal", "progress", range],
-    queryFn: () => api.clientPortal.progress(range),
+    queryKey: ["client-portal", "progress", range, clientId],
+    queryFn: () => api.clientPortal.progress(range, clientId),
   });
 
   // Default lift: most improved, else first option — set once data arrives.
@@ -51,13 +53,13 @@ export default function ClientProgressScreen() {
   }, [data, exerciseId]);
 
   const { data: strength, isLoading: strengthLoading } = useQuery({
-    queryKey: ["client-portal", "strength", exerciseId, range],
-    queryFn: () => api.clientPortal.strengthSeries(exerciseId!, range),
+    queryKey: ["client-portal", "strength", exerciseId, range, clientId],
+    queryFn: () => api.clientPortal.strengthSeries(exerciseId!, range, clientId),
     enabled: exerciseId != null,
   });
 
   const logBw = useMutation({
-    mutationFn: (w: number) => api.clientPortal.logBodyweight(w),
+    mutationFn: (w: number) => api.clientPortal.logBodyweight(w, clientId),
     onSuccess: () => {
       setBwSheetOpen(false);
       setBwInput("");

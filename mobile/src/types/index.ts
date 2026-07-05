@@ -552,6 +552,7 @@ export interface PortalExerciseRef {
 
 export interface PortalHistoryItem {
   id: number;
+  title: string;
   started_at: string;
   duration_seconds: number | null;
   exercises: PortalExerciseRef[];
@@ -569,6 +570,8 @@ export interface PortalHistorySet {
   set_number: number;
   weight: number | null;
   weight_unit: string | null;
+  height: number | null;
+  height_unit: string | null;
   reps: number | null;
   effort_value: number | null;
   effort_type: string | null;
@@ -587,6 +590,7 @@ export interface PortalWorkoutExercise {
 
 export interface ClientWorkoutDetail {
   id: number;
+  title: string;
   started_at: string;
   duration_seconds: number | null;
   total_volume: number;

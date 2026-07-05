@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import EmptyState from "../components/EmptyState";
 import Spinner from "../components/Spinner";
+import { usePreviewClientId } from "../contexts/PreviewClient";
 import { api } from "../lib/api";
 import { colors, font, radius, spacing } from "../theme";
 import type { PortalPlannedExercise, PortalUpcomingSession } from "../types";
@@ -40,10 +41,11 @@ function exercisePreview(planned: PortalPlannedExercise[]): string {
  *  to the trainer. Same warm tone as the client dashboard. */
 export default function ClientMyWorkoutsScreen() {
   const [detail, setDetail] = useState<PortalUpcomingSession | null>(null);
+  const clientId = usePreviewClientId();
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ["client-portal", "my-workouts"],
-    queryFn: () => api.clientPortal.myWorkouts(),
+    queryKey: ["client-portal", "my-workouts", clientId],
+    queryFn: () => api.clientPortal.myWorkouts(clientId),
   });
 
   if (isLoading) return <Spinner />;
