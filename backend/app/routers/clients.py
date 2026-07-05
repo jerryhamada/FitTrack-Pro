@@ -124,7 +124,8 @@ def list_clients(
             .all()
         )
         for pr, exercise in pr_rows:
-            recent_pr_label_by_client[pr.client_id] = f"{exercise.name}: {pr.value:g} {pr.unit.value}" + (
+            pr_unit = pr.unit.value if pr.unit else pr.distance_unit.value
+            recent_pr_label_by_client[pr.client_id] = f"{exercise.name}: {pr.value:g} {pr_unit}" + (
                 f" x {pr.reps}" if pr.reps else ""
             )
 

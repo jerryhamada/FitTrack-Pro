@@ -6,7 +6,7 @@ import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
 import { api } from "../lib/api";
-import { formatDate, formatWeight } from "../lib/utils";
+import { formatDate } from "../lib/utils";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
 
@@ -55,7 +55,9 @@ export default function RecentPRsScreen() {
               <Pill tone="accent">
                 {item.pr_type === "estimated_1rm" ? "e1RM" : `${item.reps ?? "?"}RM`}
               </Pill>
-              <Text style={styles.value}>{formatWeight(item.value, item.unit)}</Text>
+              <Text style={styles.value}>
+                {item.value % 1 === 0 ? item.value : item.value.toFixed(1)} {item.unit}
+              </Text>
             </View>
           </TouchableOpacity>
         )}

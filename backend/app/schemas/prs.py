@@ -4,19 +4,17 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from ..models.enums import PrTypeEnum, UnitEnum
+from ..models.enums import PrTypeEnum
 
 
 class PROut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     exercise_id: int
     exercise_name: str = ""
     pr_type: PrTypeEnum
     reps: int | None
     value: float
-    unit: UnitEnum
+    unit: str
     achieved_at: datetime
 
 

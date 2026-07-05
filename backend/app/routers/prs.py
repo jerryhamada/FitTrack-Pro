@@ -33,9 +33,18 @@ def list_prs(client_id: int, trainer: User = Depends(get_current_trainer), db: S
     )
     out = []
     for pr, exercise in rows:
-        o = PROut.model_validate(pr)
-        o.exercise_name = exercise.name
-        out.append(o)
+        out.append(
+            PROut(
+                id=pr.id,
+                exercise_id=pr.exercise_id,
+                exercise_name=exercise.name,
+                pr_type=pr.pr_type,
+                reps=pr.reps,
+                value=float(pr.value),
+                unit=pr.unit.value if pr.unit else pr.distance_unit.value,
+                achieved_at=pr.achieved_at,
+            )
+        )
     return out
 
 

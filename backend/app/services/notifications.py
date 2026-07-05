@@ -93,11 +93,12 @@ def generate_notifications(db: Session, trainer_id: int) -> None:
                 continue
             kind = "estimated 1RM" if pr.pr_type.value == "estimated_1rm" else "lift"
             reps = f" × {pr.reps}" if pr.reps else ""
+            pr_unit = pr.unit.value if pr.unit else pr.distance_unit.value
             candidates.append(
                 {
                     "type": NotificationTypeEnum.new_pr,
                     "client_id": pr.client_id,
-                    "message": f"🏆 {client.name} hit a new {kind} PR: {float(pr.value):g} {pr.unit.value}{reps}.",
+                    "message": f"🏆 {client.name} hit a new {kind} PR: {float(pr.value):g} {pr_unit}{reps}.",
                     "dedup_key": f"pr:{pr.id}",
                 }
             )

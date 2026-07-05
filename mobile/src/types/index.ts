@@ -279,7 +279,7 @@ export interface PR {
   pr_type: PrType;
   reps: number | null;
   value: number;
-  unit: Unit;
+  unit: Unit | DistanceUnit;
   achieved_at: string;
 }
 
@@ -373,7 +373,7 @@ export interface RecentPR {
   pr_type: PrType;
   reps: number | null;
   value: number;
-  unit: Unit;
+  unit: Unit | DistanceUnit;
   achieved_at: string;
 }
 

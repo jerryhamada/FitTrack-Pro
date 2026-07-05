@@ -229,7 +229,7 @@ def recent_prs(
             pr_type=pr.pr_type.value,
             reps=pr.reps,
             value=float(pr.value),
-            unit=pr.unit.value,
+            unit=pr.unit.value if pr.unit else pr.distance_unit.value,
             achieved_at=pr.achieved_at.isoformat(),
         )
         for pr, client_name, exercise_name in rows

@@ -160,7 +160,7 @@ def portal_dashboard(client: Client = Depends(get_current_client), db: Session =
             exercise_name=name,
             pr_type=pr.pr_type.value,
             value=round(float(pr.value), 1),
-            unit=pr.unit.value,
+            unit=pr.unit.value if pr.unit else pr.distance_unit.value,
             reps=pr.reps,
             achieved_at=pr.achieved_at,
         )
@@ -523,7 +523,7 @@ def progress(
             exercise_name=name,
             pr_type=pr.pr_type.value,
             value=round(float(pr.value), 1),
-            unit=pr.unit.value,
+            unit=pr.unit.value if pr.unit else pr.distance_unit.value,
             reps=pr.reps,
             achieved_at=pr.achieved_at,
         )
