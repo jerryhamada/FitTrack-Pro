@@ -16,7 +16,7 @@ class Client(Base):
     trainer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    email: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
     goal_type: Mapped[str | None] = mapped_column(String, nullable=True)

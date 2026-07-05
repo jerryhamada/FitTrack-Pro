@@ -1,8 +1,9 @@
-import { useRoute } from "@react-navigation/native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useMemo } from "react";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
 import StatCard from "../components/StatCard";
@@ -13,6 +14,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SessionSummary">;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 function exerciseBreakdown(session: WorkoutSession) {
   return [...session.session_exercises]
@@ -36,7 +38,18 @@ function exerciseBreakdown(session: WorkoutSession) {
 
 export default function SessionSummaryScreen() {
   const route = useRoute<Props["route"]>();
+  const navigation = useNavigation<Nav>();
   const { sessionId, summary: passedSummary } = route.params;
+  const [status, setStatus] = useState<"idle" | "saving" | "done">("idle");
+
+  function confirm() {
+    if (status !== "idle") return;
+    setStatus("saving");
+    setTimeout(() => {
+      setStatus("done");
+      setTimeout(() => navigation.replace("MainTabs"), 900);
+    }, 600);
+  }
 
   // Always fetch the full session — the aggregate summary doesn't carry the
   // per-exercise breakdown this screen needs, but this query is almost always
@@ -53,7 +66,8 @@ export default function SessionSummaryScreen() {
   const summary: SessionSummary = passedSummary ?? deriveSummary(session);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.subtitle}>Nice work — here's how it went.</Text>
 
       <View style={styles.statsGrid}>
@@ -108,7 +122,26 @@ export default function SessionSummaryScreen() {
           </View>
         ))}
       </View>
-    </ScrollView>
+      </ScrollView>
+      {status === "done" && (
+        <View style={styles.toast}>
+          <MaterialCommunityIcons name="check-circle" size={20} color={colors.accent} />
+          <Text style={styles.toastText}>Workout logged</Text>
+        </View>
+      )}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={confirm}
+        activeOpacity={0.85}
+        disabled={status !== "idle"}
+      >
+        {status === "saving" ? (
+          <ActivityIndicator color={colors.bg} />
+        ) : (
+          <MaterialCommunityIcons name="check" size={28} color={colors.bg} />
+        )}
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -133,7 +166,39 @@ function deriveSummary(session: WorkoutSession): SessionSummary {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, backgroundColor: colors.bg },
+  fab: {
+    position: "absolute",
+    right: spacing.base,
+    bottom: spacing.xl,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  toast: {
+    position: "absolute",
+    right: spacing.base,
+    bottom: spacing.xl + 68,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  toastText: { fontSize: font.sm, fontWeight: "600", color: colors.white },
   content: { padding: spacing.base, gap: spacing.base },
   subtitle: { fontSize: font.sm, color: colors.muted },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },

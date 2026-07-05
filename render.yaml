@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: liftiq-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: liftiq-db
+          property: connectionString
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: DEV_AUTH_BYPASS
+        value: "0"
+
+databases:
+  - name: liftiq-db
+    plan: free
+    databaseName: liftiq
+    user: liftiq

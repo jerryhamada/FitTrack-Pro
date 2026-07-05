@@ -47,7 +47,7 @@ export default function ClientsListScreen() {
     let list = clients ?? [];
     if (inactiveOnly) list = list.filter((c) => c.is_stale);
     const q = search.trim().toLowerCase();
-    if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
+    if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q));
     return list;
   }, [clients, inactiveOnly, search]);
 

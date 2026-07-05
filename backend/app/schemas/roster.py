@@ -13,7 +13,7 @@ NoteCategory = Literal["technique", "injury", "mobility", "nutrition", "homework
 
 class ClientCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: EmailStr | None = None
     phone: str | None = None
     goals: str | None = None
     goal_type: GoalType | None = None
@@ -48,7 +48,7 @@ class ClientOut(BaseModel):
 
     id: int
     name: str
-    email: str
+    email: str | None
     phone: str | None
     goals: str | None
     goal_type: str | None

@@ -29,7 +29,7 @@ import { useRoleOverride } from "../contexts/RoleOverride";
 import { api } from "../lib/api";
 import { DEV_BYPASS_AUTH } from "../lib/devAuth";
 import { IS_DEV_BUILD } from "../lib/env";
-import { colors, font, radius, spacing } from "../theme";
+import { colors } from "../theme";
 import type { ActiveSession } from "../types";
 import type { AuthStackParamList, RootStackParamList, TabParamList } from "./types";
 
@@ -245,24 +245,7 @@ function AppNavigator() {
       <RootStack.Screen
         name="SessionSummary"
         component={SessionSummaryScreen}
-        options={({ route, navigation }) => ({
-          title: "Workout Summary",
-          headerBackVisible: false,
-          gestureEnabled: false,
-          headerLeft: () => (
-            <TouchableOpacity
-              style={styles.completeHeaderBtn}
-              activeOpacity={0.85}
-              onPress={() => {
-                const { clientId } = route.params;
-                if (clientId) navigation.replace("ClientProfile", { clientId });
-                else navigation.replace("MainTabs");
-              }}
-            >
-              <Text style={styles.completeHeaderBtnText}>Complete</Text>
-            </TouchableOpacity>
-          ),
-        })}
+        options={{ title: "Workout Summary" }}
       />
       <RootStack.Screen
         name="ProgramsList"
@@ -329,17 +312,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
-  },
-  completeHeaderBtn: {
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radius.md,
-    marginLeft: spacing.base,
-  },
-  completeHeaderBtnText: {
-    color: colors.bg,
-    fontWeight: "700",
-    fontSize: font.sm,
   },
 });

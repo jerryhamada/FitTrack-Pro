@@ -13,7 +13,7 @@ export type RootStackParamList = {
   ClientsList: { filter?: "inactive"; autoFocusSearch?: boolean; pick?: boolean } | undefined;
   RecentPRs: undefined;
   SessionLog: { sessionId: number };
-  SessionSummary: { sessionId: number; summary?: SessionSummary; clientId?: number };
+  SessionSummary: { sessionId: number; summary?: SessionSummary };
   ProgramsList: undefined;
   ProgramBuilder: { programId?: number };
   // Not currently linked from any tab or menu — kept reachable in case Schedule

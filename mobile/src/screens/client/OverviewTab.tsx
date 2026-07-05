@@ -123,7 +123,7 @@ export default function OverviewTab({ client, onStartWorkout }: OverviewTabProps
             <Row label="Age" value={client.age != null ? String(client.age) : "—"} />
             <Row label="Gender" value={client.gender || "—"} />
             <Row label="Phone" value={client.phone || "—"} />
-            <Row label="Email" value={client.email} />
+            <Row label="Email" value={client.email || "—"} />
             <Row
               label="Goal"
               value={

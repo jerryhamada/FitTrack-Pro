@@ -31,7 +31,7 @@ export interface Trainer {
 export interface Client {
   id: number;
   name: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   goals: string | null;
   starting_bodyweight: number | null;

@@ -108,7 +108,7 @@ export default function ClientsScreen() {
     if (freqFilter === "3plus")
       list = list.filter((c) => c.training_frequency_target != null && c.training_frequency_target >= 3);
     const q = search.trim().toLowerCase();
-    if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
+    if (q) list = list.filter((c) => c.name.toLowerCase().includes(q) || (c.email ?? "").toLowerCase().includes(q));
 
     const sorted = [...list];
     if (sort === "name") {

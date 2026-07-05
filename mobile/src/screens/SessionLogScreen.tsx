@@ -19,7 +19,7 @@ import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
 import { api } from "../lib/api";
 import { formatWeight } from "../lib/utils";
-import type { EffortType, Exercise, SetEntry, SetStatus, Unit } from "../types";
+import type { Exercise, SetEntry, SetStatus, Unit } from "../types";
 import type { RootStackParamList } from "../navigation/types";
 import { MUSCLE_REGIONS as MUSCLES } from "../lib/muscles";
 import { colors, font, radius, spacing } from "../theme";
@@ -66,7 +66,6 @@ export default function SessionLogScreen() {
   const [notes, setNotes] = useState<string | null>(null); // null = not touched yet
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [summary, setSummary] = useState<Awaited<ReturnType<typeof api.sessions.complete>> | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -133,6 +132,9 @@ export default function SessionLogScreen() {
       arr.push(s);
       map.set(s.exercise_id, arr);
     }
+    // Backend order isn't guaranteed (order_index is always 0) — sort by
+    // set_number so sets always display oldest-to-newest.
+    for (const arr of map.values()) arr.sort((a, b) => a.set_number - b.set_number);
     return map;
   }, [session?.sets]);
 
@@ -221,12 +223,10 @@ export default function SessionLogScreen() {
   const complete = useMutation({
     mutationFn: () => api.sessions.complete(sessionId),
     onSuccess: (s) => {
-      // The workout is done on the backend the instant this succeeds — invalidate
-      // right here rather than waiting for "Save Workout", so the tab bar's
-      // current-workout button resets even if the summary sheet gets dismissed
-      // some other way (swipe/backdrop) instead of via that button.
-      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
-      setSummary(s); // slide-up summary sheet; navigation happens on Save
+      for (const key of ["clients", "dashboard", "client-sessions", "overview-stats", "weekly-stats", "pr-summary", "prs", "exercise-insights", "schedule", "sessions"]) {
+        qc.invalidateQueries({ queryKey: [key] });
+      }
+      navigation.replace("SessionSummary", { sessionId, summary: s });
     },
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
@@ -237,11 +237,8 @@ export default function SessionLogScreen() {
       qc.invalidateQueries({ queryKey: ["client-sessions"] });
       qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["sessions", "active"] });
-      if (client) {
-        navigation.replace("ClientProfile", { clientId: client.id });
-      } else {
-        navigation.navigate("MainTabs");
-      }
+      navigation.replace("MainTabs");
+      Alert.alert("Session canceled", "Session canceled successfully");
     },
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
@@ -258,39 +255,8 @@ export default function SessionLogScreen() {
     }
   }
 
-  function saveWorkout() {
-    const done = () => {
-      for (const key of ["clients", "dashboard", "client-sessions", "overview-stats", "weekly-stats", "pr-summary", "prs", "exercise-insights", "schedule", "sessions"]) {
-        qc.invalidateQueries({ queryKey: [key] });
-      }
-      navigation.replace("SessionSummary", {
-        sessionId,
-        summary: summary ?? undefined,
-        clientId: client?.id,
-      });
-      setSummary(null);
-    };
-    if (notes !== null && notes !== (session?.notes ?? "")) {
-      saveNotes.mutate(notes, { onSettled: done });
-    } else {
-      done();
-    }
-  }
-
-  // Finish button in the nav header — always accessible while logging. Once the
-  // workout is complete and the summary is showing, there's nothing left to
-  // "finish" or go back from — the only way forward is the Complete button on
-  // the summary itself, so the header back chevron and swipe-back gesture are
-  // disabled too (no accidental exit without completing the save step).
+  // Finish button in the nav header — always accessible while logging.
   useEffect(() => {
-    if (summary !== null) {
-      navigation.setOptions({
-        headerRight: () => null,
-        headerLeft: () => null,
-        gestureEnabled: false,
-      });
-      return;
-    }
     navigation.setOptions({
       headerLeft: undefined,
       gestureEnabled: true,
@@ -303,7 +269,7 @@ export default function SessionLogScreen() {
       ),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, session?.sets.length, complete.isPending, summary]);
+  }, [navigation, session?.sets.length, complete.isPending]);
 
   if (isLoading || !session) return <Spinner />;
 
@@ -514,52 +480,6 @@ export default function SessionLogScreen() {
           setAddOpen(false);
         }}
       />
-
-      {/* Finish summary sheet — not dismissable via backdrop/back gesture, matching
-          the header lockout above: Complete Workout is the only way out. */}
-      <BottomSheet visible={summary !== null} onClose={() => setSummary(null)} dismissable={false}>
-        {summary && (
-          <View style={{ gap: spacing.md }}>
-            <Text style={styles.summaryTitle}>Workout complete 🎉</Text>
-            <View style={styles.summaryGrid}>
-              <SummaryStat
-                label="Duration"
-                value={
-                  summary.duration_seconds != null
-                    ? `${Math.round(summary.duration_seconds / 60)}m`
-                    : formatElapsed(session.started_at, now)
-                }
-              />
-              <SummaryStat
-                label="Volume"
-                value={`${Math.round(summary.total_volume).toLocaleString()} ${summary.total_volume_unit}`}
-              />
-              <SummaryStat label="Exercises" value={String(membership.length)} />
-              <SummaryStat label="Sets" value={String(summary.total_sets)} />
-            </View>
-            {summary.prs_hit.length > 0 && (
-              <View style={styles.summaryPrs}>
-                <Text style={styles.summaryPrsTitle}>🏆 New PRs</Text>
-                {summary.prs_hit.map((s) => (
-                  <Text key={s.id} style={styles.summaryPrRow}>
-                    {s.exercise_name}: {s.weight != null ? formatWeight(s.weight, s.weight_unit) : "BW"} ×{" "}
-                    {s.reps ?? "—"}
-                  </Text>
-                ))}
-              </View>
-            )}
-            <TextInput
-              style={styles.notesInput}
-              value={notesValue}
-              onChangeText={setNotes}
-              placeholder="Workout notes (last chance to edit)"
-              placeholderTextColor={colors.muted}
-              multiline
-            />
-            <Btn label="Complete Workout" onPress={saveWorkout} loading={saveNotes.isPending} fullWidth />
-          </View>
-        )}
-      </BottomSheet>
     </View>
   );
 }
@@ -609,31 +529,10 @@ function ExerciseCard({
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
   const [unit, setUnit] = useState<Unit>(defaultUnit);
-  const [effortValue, setEffortValue] = useState("");
-  const [effortType, setEffortType] = useState<EffortType>("rpe");
   const [bodyweight, setBodyweight] = useState(false);
-  const [setNotes, setSetNotes] = useState("");
-  const [showNoteField, setShowNoteField] = useState(false);
   const [expandedNoteSetId, setExpandedNoteSetId] = useState<number | null>(null);
 
   const hasPr = sets.some((s) => s.is_pr);
-  const lastSet = sets.length > 0 ? sets[sets.length - 1] : null;
-
-  function duplicateLast() {
-    if (!lastSet) return;
-    if (lastSet.weight != null) {
-      setBodyweight(false);
-      setWeight(String(lastSet.weight));
-      setUnit(lastSet.weight_unit ?? defaultUnit);
-    } else {
-      setBodyweight(true);
-    }
-    setReps(lastSet.reps != null ? String(lastSet.reps) : "");
-    if (lastSet.effort_value != null) {
-      setEffortValue(String(lastSet.effort_value));
-      setEffortType(lastSet.effort_type ?? "rpe");
-    }
-  }
 
   function submit() {
     if (!bodyweight && !weight) {
@@ -644,18 +543,16 @@ function ExerciseCard({
       Alert.alert("Enter reps");
       return;
     }
+    // Bodyweight sets may still carry extra load (e.g. weighted pull-ups) — an
+    // empty or zero weight field just means bodyweight only.
+    const hasWeight = weight.trim() !== "" && Number(weight) > 0;
     logSet({
       exercise_id: exerciseId,
-      weight: bodyweight ? undefined : Number(weight),
-      weight_unit: bodyweight ? undefined : unit,
+      weight: bodyweight && !hasWeight ? undefined : Number(weight),
+      weight_unit: bodyweight && !hasWeight ? undefined : unit,
       reps: Number(reps),
-      effort_value: effortValue ? Number(effortValue) : undefined,
-      effort_type: effortValue ? effortType : undefined,
-      notes: setNotes.trim() || undefined,
       status: "completed",
     });
-    setSetNotes("");
-    setShowNoteField(false);
   }
 
   const weightStep = unit === "lbs" ? 5 : 2.5;
@@ -734,28 +631,36 @@ function ExerciseCard({
           {/* Input row */}
           <View style={cardStyles.inputRow}>
             <View style={{ flex: 3 }}>
-              <Text style={cardStyles.fieldLabel}>Weight ({unit})</Text>
-              <View style={cardStyles.stepper}>
+              <Text style={cardStyles.fieldLabel}>{bodyweight ? `Added weight (${unit})` : `Weight (${unit})`}</Text>
+              <View style={cardStyles.weightRow}>
+                <View style={[cardStyles.stepper, { flex: 1 }]}>
+                  <TouchableOpacity
+                    style={cardStyles.stepBtn}
+                    onPress={() => setWeight((v) => String(Math.max(0, (Number(v) || 0) - weightStep)))}
+                  >
+                    <Text style={cardStyles.stepBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={cardStyles.stepInput}
+                    value={weight}
+                    onChangeText={setWeight}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={colors.muted}
+                  />
+                  <TouchableOpacity
+                    style={cardStyles.stepBtn}
+                    onPress={() => setWeight((v) => String((Number(v) || 0) + weightStep))}
+                  >
+                    <Text style={cardStyles.stepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
-                  style={cardStyles.stepBtn}
-                  onPress={() => setWeight((v) => String(Math.max(0, (Number(v) || 0) - weightStep)))}
+                  style={[cardStyles.bwToggle, bodyweight && cardStyles.bwToggleActive]}
+                  onPress={() => setBodyweight((b) => !b)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={cardStyles.stepBtnText}>−</Text>
-                </TouchableOpacity>
-                <TextInput
-                  style={cardStyles.stepInput}
-                  value={bodyweight ? "BW" : weight}
-                  editable={!bodyweight}
-                  onChangeText={setWeight}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                  placeholderTextColor={colors.muted}
-                />
-                <TouchableOpacity
-                  style={cardStyles.stepBtn}
-                  onPress={() => setWeight((v) => String((Number(v) || 0) + weightStep))}
-                >
-                  <Text style={cardStyles.stepBtnText}>+</Text>
+                  <Text style={[cardStyles.bwToggleText, bodyweight && cardStyles.bwToggleTextActive]}>BW</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -785,50 +690,6 @@ function ExerciseCard({
               </View>
             </View>
           </View>
-
-          <View style={cardStyles.optionsRow}>
-            <TouchableOpacity style={cardStyles.miniToggle} onPress={() => setBodyweight((b) => !b)}>
-              <Text style={[cardStyles.miniToggleText, bodyweight && { color: colors.accent }]}>
-                {bodyweight ? "✓ BW" : "BW"}
-              </Text>
-            </TouchableOpacity>
-            <View style={cardStyles.effortWrap}>
-              <TextInput
-                style={cardStyles.effortInput}
-                value={effortValue}
-                onChangeText={setEffortValue}
-                keyboardType="decimal-pad"
-                placeholder="RPE"
-                placeholderTextColor={colors.muted}
-              />
-              <TouchableOpacity
-                onPress={() => setEffortType(effortType === "rpe" ? "rir" : "rpe")}
-                style={cardStyles.effortTypeBtn}
-              >
-                <Text style={cardStyles.effortTypeText}>{effortType.toUpperCase()}</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={cardStyles.miniToggle} onPress={() => setShowNoteField((v) => !v)}>
-              <Text style={[cardStyles.miniToggleText, showNoteField && { color: colors.accent }]}>📝</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[cardStyles.miniToggle, !lastSet && { opacity: 0.35 }]}
-              onPress={duplicateLast}
-              disabled={!lastSet}
-            >
-              <Text style={cardStyles.miniToggleText}>⧉ Last</Text>
-            </TouchableOpacity>
-          </View>
-
-          {showNoteField && (
-            <TextInput
-              style={cardStyles.noteInput}
-              value={setNotes}
-              onChangeText={setSetNotes}
-              placeholder="Set note (form cue, pain, tempo...)"
-              placeholderTextColor={colors.muted}
-            />
-          )}
 
           <Btn label={logPending ? "Logging..." : "Add Set"} onPress={submit} loading={logPending} fullWidth />
         </View>
@@ -1061,15 +922,6 @@ function AddExerciseSheet({ visible, onClose, exercises, insightByExercise, onPi
   );
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.summaryStat}>
-      <Text style={styles.summaryStatValue}>{value}</Text>
-      <Text style={styles.summaryStatLabel}>{label}</Text>
-    </View>
-  );
-}
-
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
@@ -1174,31 +1026,6 @@ const styles = StyleSheet.create({
   emptyHint: { alignItems: "center", paddingVertical: spacing.xl, gap: spacing.xs },
   emptyHintTitle: { fontSize: font.md, fontWeight: "600", color: colors.white },
   emptyHintSub: { fontSize: font.sm, color: colors.muted },
-  summaryTitle: { fontSize: font.xl, fontWeight: "700", color: colors.white, textAlign: "center" },
-  summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  summaryStat: {
-    flexGrow: 1,
-    flexBasis: "45%",
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    alignItems: "center",
-    gap: 2,
-  },
-  summaryStatValue: { fontSize: font.lg, fontWeight: "700", color: colors.white },
-  summaryStatLabel: { fontSize: font.xs, color: colors.muted },
-  summaryPrs: {
-    backgroundColor: colors.accentDim,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.accent + "40",
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  summaryPrsTitle: { fontSize: font.sm, fontWeight: "700", color: colors.accent },
-  summaryPrRow: { fontSize: font.sm, color: colors.white },
 });
 
 const supersetStyles = StyleSheet.create({
@@ -1303,6 +1130,20 @@ const cardStyles = StyleSheet.create({
   },
   inputRow: { flexDirection: "row", gap: spacing.sm },
   fieldLabel: { fontSize: font.xs, color: colors.muted, marginBottom: 4 },
+  weightRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  bwToggle: {
+    width: 44,
+    height: 48,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+  },
+  bwToggleActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  bwToggleText: { fontSize: font.sm, fontWeight: "700", color: colors.muted },
+  bwToggleTextActive: { color: colors.bg },
   stepper: {
     flexDirection: "row",
     alignItems: "center",
@@ -1327,50 +1168,6 @@ const cardStyles = StyleSheet.create({
     fontSize: font.lg,
     fontWeight: "600",
     backgroundColor: colors.surface,
-  },
-  optionsRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
-  miniToggle: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  miniToggleText: { fontSize: font.sm, color: colors.muted, fontWeight: "600" },
-  effortWrap: {
-    flex: 1,
-    flexDirection: "row",
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    overflow: "hidden",
-    height: 40,
-  },
-  effortInput: {
-    flex: 1,
-    paddingHorizontal: spacing.sm,
-    color: colors.white,
-    fontSize: font.sm,
-    backgroundColor: colors.bg,
-  },
-  effortTypeBtn: {
-    paddingHorizontal: spacing.sm,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-  },
-  effortTypeText: { fontSize: font.xs, fontWeight: "700", color: colors.accent },
-  noteInput: {
-    height: 40,
-    backgroundColor: colors.bg,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    color: colors.white,
-    fontSize: font.sm,
   },
 });
 
