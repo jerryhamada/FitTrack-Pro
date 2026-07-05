@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from ..models.enums import EffortTypeEnum, PrTypeEnum, SetStatusEnum, UnitEnum
+from ..models.enums import DistanceUnitEnum, EffortTypeEnum, PrTypeEnum, SetStatusEnum, UnitEnum
 
 
 class SessionStart(BaseModel):
@@ -32,6 +32,8 @@ class SetCreate(BaseModel):
     order_index: int = 0
     weight: float | None = None
     weight_unit: UnitEnum | None = None
+    height: float | None = None
+    height_unit: DistanceUnitEnum | None = None
     is_per_side: bool = False
     reps: int | None = None
     effort_value: float | None = None
@@ -45,6 +47,8 @@ class SetCreate(BaseModel):
 class SetUpdate(BaseModel):
     weight: float | None = None
     weight_unit: UnitEnum | None = None
+    height: float | None = None
+    height_unit: DistanceUnitEnum | None = None
     is_per_side: bool | None = None
     reps: int | None = None
     effort_value: float | None = None
@@ -66,6 +70,8 @@ class SetOut(BaseModel):
     set_number: int
     weight: float | None
     weight_unit: UnitEnum | None
+    height: float | None = None
+    height_unit: DistanceUnitEnum | None = None
     is_per_side: bool
     reps: int | None
     effort_value: float | None

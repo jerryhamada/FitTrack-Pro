@@ -23,6 +23,11 @@ class Exercise(Base):
     demo_media_url: Mapped[str | None] = mapped_column(String, nullable=True)
     instructions_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ordered "how to perform" steps
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tracks_height: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Only meaningful when tracks_height is set: a lower height is the harder/better
+    # direction (e.g. box-assisted push-ups — less assistance is more impressive),
+    # vs. the default where a higher number is always better (box jumps, weight, etc).
+    invert_difficulty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

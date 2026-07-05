@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from ..models.enums import UnitEnum
+from ..models.enums import DistanceUnitEnum, UnitEnum
 
 
 class TrainerProfileOut(BaseModel):
@@ -11,6 +11,7 @@ class TrainerProfileOut(BaseModel):
     business_name: str | None
     logo_url: str | None
     default_unit: UnitEnum
+    default_distance_unit: DistanceUnitEnum
     notification_prefs: dict | None
     subscription_status: str
 
@@ -19,6 +20,7 @@ class TrainerProfileUpdate(BaseModel):
     business_name: str | None = None
     logo_url: str | None = None
     default_unit: UnitEnum | None = None
+    default_distance_unit: DistanceUnitEnum | None = None
     notification_prefs: dict | None = None
 
 

@@ -41,6 +41,8 @@ interface FormState {
   secondary_muscles: string[];
   equipment: string | null;
   exercise_type: "compound" | "isolation" | null;
+  tracks_height: boolean;
+  invert_difficulty: boolean;
   steps: string; // one step per line; split into instructions_steps on save
   notes: string;
 }
@@ -51,6 +53,8 @@ const EMPTY_FORM: FormState = {
   secondary_muscles: [],
   equipment: null,
   exercise_type: null,
+  tracks_height: false,
+  invert_difficulty: false,
   steps: "",
   notes: "",
 };
@@ -88,6 +92,8 @@ export default function ExerciseLibraryScreen() {
         secondary_muscles: form.secondary_muscles.length > 0 ? form.secondary_muscles : null,
         equipment: form.equipment,
         exercise_type: form.exercise_type,
+        tracks_height: form.tracks_height,
+        invert_difficulty: form.tracks_height && form.invert_difficulty,
         instructions_steps: (() => {
           const steps = form.steps.split("\n").map((l) => l.trim()).filter(Boolean);
           return steps.length > 0 ? steps : null;
@@ -165,6 +171,8 @@ export default function ExerciseLibraryScreen() {
       secondary_muscles: e.secondary_muscles ?? [],
       equipment: e.equipment,
       exercise_type: e.exercise_type,
+      tracks_height: e.tracks_height,
+      invert_difficulty: e.invert_difficulty,
       steps: (e.instructions_steps ?? []).join("\n"),
       notes: e.notes ?? "",
     });
@@ -304,6 +312,13 @@ export default function ExerciseLibraryScreen() {
                 <DetailRow label="Type" value={detail.exercise_type ?? "—"} />
               </View>
 
+              {detail.tracks_height && (
+                <View style={styles.muscleTags}>
+                  <Pill tone="accent">Logs height</Pill>
+                  {detail.invert_difficulty && <Pill>Lower is better</Pill>}
+                </View>
+              )}
+
               {/* Video / demo */}
               <View style={styles.demoSection}>
                 <Text style={styles.sectionHeading}>Demo</Text>
@@ -434,6 +449,29 @@ export default function ExerciseLibraryScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <Text style={styles.fieldLabel}>Logging</Text>
+            <View style={styles.chipWrap}>
+              <TouchableOpacity
+                style={[styles.chip, form.tracks_height && styles.chipActive]}
+                onPress={() => setForm({ ...form, tracks_height: !form.tracks_height })}
+              >
+                <Text style={[styles.chipText, form.tracks_height && { color: "#000" }]}>
+                  Track by height instead of weight
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {form.tracks_height && (
+              <View style={styles.chipWrap}>
+                <TouchableOpacity
+                  style={[styles.chip, form.invert_difficulty && styles.chipActive]}
+                  onPress={() => setForm({ ...form, invert_difficulty: !form.invert_difficulty })}
+                >
+                  <Text style={[styles.chipText, form.invert_difficulty && { color: "#000" }]}>
+                    Higher is easier (invert difficulty)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <Text style={styles.fieldLabel}>How to perform (one step per line)</Text>
             <TextInput
               style={[styles.notesInput, { minHeight: 110 }]}

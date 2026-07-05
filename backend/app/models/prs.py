@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .enums import PrTypeEnum, UnitEnum
+from .enums import DistanceUnitEnum, PrTypeEnum, UnitEnum
 
 
 class PR(Base):
@@ -19,7 +19,14 @@ class PR(Base):
     pr_type: Mapped[PrTypeEnum] = mapped_column(Enum(PrTypeEnum, name="pr_type_enum"), nullable=False)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     value: Mapped[float] = mapped_column(Numeric, nullable=False)
-    unit: Mapped[UnitEnum] = mapped_column(Enum(UnitEnum, name="unit_enum"), nullable=False)
+    # Exactly one of unit/distance_unit is set, depending on pr_type: weight PRs
+    # (weight_at_reps, estimated_1rm) use unit; height PRs (height_at_reps) use
+    # distance_unit.
+    unit: Mapped[UnitEnum | None] = mapped_column(Enum(UnitEnum, name="unit_enum"), nullable=True)
+    distance_unit: Mapped[DistanceUnitEnum | None] = mapped_column(
+        Enum(DistanceUnitEnum, name="distance_unit_enum", values_callable=lambda e: [m.value for m in e]),
+        nullable=True,
+    )
     achieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

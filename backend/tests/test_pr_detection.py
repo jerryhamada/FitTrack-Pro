@@ -1,6 +1,6 @@
 import pytest
 
-from app.models.enums import PrTypeEnum, SetStatusEnum, UnitEnum
+from app.models.enums import DistanceUnitEnum, PrTypeEnum, SetStatusEnum, UnitEnum
 from app.models.exercises import Exercise
 from app.models.sessions import SetEntry, WorkoutSession
 from app.services.pr_detection import detect_and_record_prs
@@ -119,3 +119,72 @@ def test_different_exercise_does_not_affect_pr_history(db, session_row, exercise
     log_set(db, session_row, exercise_row, weight=300, reps=5)
     unrelated = log_set(db, session_row, other, weight=20, reps=5)
     assert unrelated.is_pr is True, "a different exercise's history should not block a first-time PR"
+
+
+@pytest.fixture()
+def box_jump_row(db):
+    e = Exercise(
+        trainer_id=None, name="Test Box jumps", category="Lower Body", tracks_height=True, invert_difficulty=False
+    )
+    db.add(e)
+    db.flush()
+    return e
+
+
+@pytest.fixture()
+def box_pushup_row(db):
+    e = Exercise(
+        trainer_id=None,
+        name="Test Box push-ups",
+        category="Upper Body — Compound Push",
+        tracks_height=True,
+        invert_difficulty=True,
+    )
+    db.add(e)
+    db.flush()
+    return e
+
+
+def log_height_set(db, session_row, exercise_row, height, reps, height_unit=DistanceUnitEnum.inches):
+    s = SetEntry(
+        session_id=session_row.id,
+        exercise_id=exercise_row.id,
+        order_index=0,
+        set_number=1,
+        status=SetStatusEnum.completed,
+        is_per_side=False,
+        height=height,
+        height_unit=height_unit,
+        reps=reps,
+    )
+    db.add(s)
+    db.flush()
+    detect_and_record_prs(db, session_row.client_id, s)
+    return s
+
+
+def test_box_jump_higher_is_a_pr(db, session_row, box_jump_row):
+    log_height_set(db, session_row, box_jump_row, height=24, reps=1)
+    higher = log_height_set(db, session_row, box_jump_row, height=30, reps=1)
+    assert higher.is_pr is True
+    assert higher.pr_type == PrTypeEnum.height_at_reps
+
+
+def test_box_jump_lower_is_not_a_pr(db, session_row, box_jump_row):
+    log_height_set(db, session_row, box_jump_row, height=30, reps=1)
+    lower = log_height_set(db, session_row, box_jump_row, height=24, reps=1)
+    assert lower.is_pr is False
+
+
+def test_box_pushup_lower_height_is_a_pr(db, session_row, box_pushup_row):
+    # Inverted difficulty: less box assistance (lower height) is the improvement.
+    log_height_set(db, session_row, box_pushup_row, height=20, reps=8)
+    lower = log_height_set(db, session_row, box_pushup_row, height=14, reps=8)
+    assert lower.is_pr is True
+    assert lower.pr_type == PrTypeEnum.height_at_reps
+
+
+def test_box_pushup_higher_height_is_not_a_pr(db, session_row, box_pushup_row):
+    log_height_set(db, session_row, box_pushup_row, height=14, reps=8)
+    higher = log_height_set(db, session_row, box_pushup_row, height=20, reps=8)
+    assert higher.is_pr is False

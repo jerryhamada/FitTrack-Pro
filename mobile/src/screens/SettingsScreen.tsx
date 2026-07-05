@@ -25,12 +25,14 @@ export default function SettingsScreen() {
   const [businessName, setBusinessName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [defaultUnit, setDefaultUnit] = useState<"lbs" | "kg">("lbs");
+  const [defaultDistanceUnit, setDefaultDistanceUnit] = useState<"in" | "cm">("in");
 
   useEffect(() => {
     if (trainer?.profile) {
       setBusinessName(trainer.profile.business_name ?? "");
       setLogoUrl(trainer.profile.logo_url ?? "");
       setDefaultUnit(trainer.profile.default_unit);
+      setDefaultDistanceUnit(trainer.profile.default_distance_unit);
     }
   }, [trainer]);
 
@@ -40,6 +42,7 @@ export default function SettingsScreen() {
         business_name: businessName,
         logo_url: logoUrl,
         default_unit: defaultUnit,
+        default_distance_unit: defaultDistanceUnit,
       }),
     onSuccess: () => Alert.alert("Saved", "Settings updated."),
     onError: (e) => Alert.alert("Error", (e as Error).message),
@@ -114,6 +117,26 @@ export default function SettingsScreen() {
               onPress={() => setDefaultUnit(u)}
             >
               <Text style={[styles.unitBtnText, defaultUnit === u && styles.unitBtnTextActive]}>
+                {u}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Default height unit</Text>
+        <Text style={styles.sectionHint}>
+          Used for height-based exercises (box jumps, box-assisted push-ups, etc).
+        </Text>
+        <View style={styles.unitRow}>
+          {(["in", "cm"] as const).map((u) => (
+            <TouchableOpacity
+              key={u}
+              style={[styles.unitBtn, defaultDistanceUnit === u && styles.unitBtnActive]}
+              onPress={() => setDefaultDistanceUnit(u)}
+            >
+              <Text style={[styles.unitBtnText, defaultDistanceUnit === u && styles.unitBtnTextActive]}>
                 {u}
               </Text>
             </TouchableOpacity>

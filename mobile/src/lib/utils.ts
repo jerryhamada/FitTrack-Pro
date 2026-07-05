@@ -1,4 +1,4 @@
-import type { Unit } from "../types";
+import type { DistanceUnit, Unit } from "../types";
 
 const LBS_PER_KG = 2.2046226218;
 
@@ -17,6 +17,11 @@ export function convertUnit(value: number, from: Unit, to: Unit): number {
 export function formatWeight(value: number | null, unit: Unit | null): string {
   if (value == null) return "BW";
   return `${value % 1 === 0 ? value : value.toFixed(1)} ${unit ?? "lbs"}`;
+}
+
+export function formatHeight(value: number | null, unit: DistanceUnit | null): string {
+  if (value == null) return "—";
+  return `${value % 1 === 0 ? value : value.toFixed(1)} ${unit ?? "in"}`;
 }
 
 export function formatDuration(seconds: number | null): string {

@@ -1,10 +1,11 @@
 export type Unit = "lbs" | "kg";
+export type DistanceUnit = "in" | "cm";
 export type ClientStatus = "active" | "archived";
 export type GoalType = "strength" | "hypertrophy" | "fat_loss" | "endurance" | "general_fitness";
 export type InviteStatus = "pending" | "accepted" | "expired" | "revoked";
 export type EffortType = "rpe" | "rir";
 export type SetStatus = "completed" | "partial" | "skipped";
-export type PrType = "weight_at_reps" | "estimated_1rm";
+export type PrType = "weight_at_reps" | "estimated_1rm" | "height_at_reps";
 export type ActivityEventType =
   | "session_logged"
   | "pr_hit"
@@ -17,6 +18,7 @@ export interface TrainerProfile {
   business_name: string | null;
   logo_url: string | null;
   default_unit: Unit;
+  default_distance_unit: DistanceUnit;
   notification_prefs: Record<string, unknown> | null;
   subscription_status: string;
 }
@@ -97,6 +99,8 @@ export interface Exercise {
   exercise_type: "compound" | "isolation" | null;
   demo_media_url: string | null;
   instructions_steps: string[] | null;
+  tracks_height: boolean;
+  invert_difficulty: boolean;
   notes: string | null;
   is_custom: boolean;
   is_favorite: boolean;
@@ -188,6 +192,8 @@ export interface SetEntry {
   set_number: number;
   weight: number | null;
   weight_unit: Unit | null;
+  height: number | null;
+  height_unit: DistanceUnit | null;
   is_per_side: boolean;
   reps: number | null;
   effort_value: number | null;

@@ -18,8 +18,8 @@ import Btn from "../components/Btn";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
 import { api } from "../lib/api";
-import { formatWeight } from "../lib/utils";
-import type { Exercise, SetEntry, SetStatus, Unit } from "../types";
+import { formatHeight, formatWeight } from "../lib/utils";
+import type { DistanceUnit, Exercise, SetEntry, SetStatus, Unit } from "../types";
 import type { RootStackParamList } from "../navigation/types";
 import { MUSCLE_REGIONS as MUSCLES } from "../lib/muscles";
 import { colors, font, radius, spacing } from "../theme";
@@ -54,6 +54,7 @@ export default function SessionLogScreen() {
     enabled: !!session,
   });
   const { data: exercises } = useQuery({ queryKey: ["exercises"], queryFn: () => api.exercises.list() });
+  const { data: trainer } = useQuery({ queryKey: ["trainer-me"], queryFn: api.trainer.me });
   const { data: insights } = useQuery({
     queryKey: ["exercise-insights", session?.client_id],
     queryFn: () => api.clients.exerciseInsights(session!.client_id),
@@ -413,6 +414,7 @@ export default function SessionLogScreen() {
               expanded={expandedId === block.exerciseId}
               onToggle={() => setExpandedId(expandedId === block.exerciseId ? null : block.exerciseId)}
               defaultUnit={client?.preferred_unit ?? "lbs"}
+              defaultDistanceUnit={trainer?.profile?.default_distance_unit ?? "in"}
               logSet={(body) => logSet.mutate(body)}
               logPending={logSet.isPending}
               deleteSet={(setId) =>
@@ -436,6 +438,7 @@ export default function SessionLogScreen() {
               expandedId={expandedId}
               setExpandedId={setExpandedId}
               defaultUnit={client?.preferred_unit ?? "lbs"}
+              defaultDistanceUnit={trainer?.profile?.default_distance_unit ?? "in"}
               logSet={(body) => logSet.mutate(body)}
               logPending={logSet.isPending}
               deleteSet={(setId) =>
@@ -496,6 +499,7 @@ interface ExerciseCardProps {
   expanded: boolean;
   onToggle: () => void;
   defaultUnit: Unit;
+  defaultDistanceUnit: DistanceUnit;
   logSet: (body: Parameters<typeof api.sessions.logSet>[1]) => void;
   logPending: boolean;
   deleteSet: (setId: number) => void;
@@ -516,6 +520,7 @@ function ExerciseCard({
   expanded,
   onToggle,
   defaultUnit,
+  defaultDistanceUnit,
   logSet,
   logPending,
   deleteSet,
@@ -526,15 +531,36 @@ function ExerciseCard({
   highlighted,
   hideSetCount,
 }: ExerciseCardProps) {
+  const tracksHeight = exercise?.tracks_height ?? false;
   const [weight, setWeight] = useState("");
+  const [height, setHeight] = useState("");
   const [reps, setReps] = useState("");
   const [unit, setUnit] = useState<Unit>(defaultUnit);
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(defaultDistanceUnit);
   const [bodyweight, setBodyweight] = useState(false);
   const [expandedNoteSetId, setExpandedNoteSetId] = useState<number | null>(null);
 
   const hasPr = sets.some((s) => s.is_pr);
 
   function submit() {
+    if (tracksHeight) {
+      if (!height) {
+        Alert.alert("Enter a height");
+        return;
+      }
+      if (!reps) {
+        Alert.alert("Enter reps");
+        return;
+      }
+      logSet({
+        exercise_id: exerciseId,
+        height: Number(height),
+        height_unit: distanceUnit,
+        reps: Number(reps),
+        status: "completed",
+      });
+      return;
+    }
     if (!bodyweight && !weight) {
       Alert.alert("Enter a weight (or mark bodyweight)");
       return;
@@ -556,6 +582,7 @@ function ExerciseCard({
   }
 
   const weightStep = unit === "lbs" ? 5 : 2.5;
+  const heightStep = distanceUnit === "in" ? 1 : 2;
 
   return (
     <View
@@ -606,7 +633,12 @@ function ExerciseCard({
               <View style={cardStyles.setRow}>
                 <Text style={cardStyles.setNum}>#{s.set_number}</Text>
                 <Text style={cardStyles.setValue}>
-                  {s.weight != null ? formatWeight(s.weight, s.weight_unit) : "BW"} × {s.reps ?? "—"}
+                  {s.height != null
+                    ? formatHeight(s.height, s.height_unit)
+                    : s.weight != null
+                      ? formatWeight(s.weight, s.weight_unit)
+                      : "BW"}{" "}
+                  × {s.reps ?? "—"}
                   {s.effort_value ? `  ${s.effort_type?.toUpperCase()} ${s.effort_value}` : ""}
                 </Text>
                 {s.is_pr && <Text style={cardStyles.trophy}>🏆</Text>}
@@ -631,38 +663,79 @@ function ExerciseCard({
           {/* Input row */}
           <View style={cardStyles.inputRow}>
             <View style={{ flex: 3 }}>
-              <Text style={cardStyles.fieldLabel}>{bodyweight ? `Added weight (${unit})` : `Weight (${unit})`}</Text>
-              <View style={cardStyles.weightRow}>
-                <View style={[cardStyles.stepper, { flex: 1 }]}>
-                  <TouchableOpacity
-                    style={cardStyles.stepBtn}
-                    onPress={() => setWeight((v) => String(Math.max(0, (Number(v) || 0) - weightStep)))}
-                  >
-                    <Text style={cardStyles.stepBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={cardStyles.stepInput}
-                    value={weight}
-                    onChangeText={setWeight}
-                    keyboardType="decimal-pad"
-                    placeholder="0"
-                    placeholderTextColor={colors.muted}
-                  />
-                  <TouchableOpacity
-                    style={cardStyles.stepBtn}
-                    onPress={() => setWeight((v) => String((Number(v) || 0) + weightStep))}
-                  >
-                    <Text style={cardStyles.stepBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity
-                  style={[cardStyles.bwToggle, bodyweight && cardStyles.bwToggleActive]}
-                  onPress={() => setBodyweight((b) => !b)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[cardStyles.bwToggleText, bodyweight && cardStyles.bwToggleTextActive]}>BW</Text>
-                </TouchableOpacity>
-              </View>
+              {tracksHeight ? (
+                <>
+                  <Text style={cardStyles.fieldLabel}>Height ({distanceUnit})</Text>
+                  <View style={cardStyles.weightRow}>
+                    <View style={[cardStyles.stepper, { flex: 1 }]}>
+                      <TouchableOpacity
+                        style={cardStyles.stepBtn}
+                        onPress={() => setHeight((v) => String(Math.max(0, (Number(v) || 0) - heightStep)))}
+                      >
+                        <Text style={cardStyles.stepBtnText}>−</Text>
+                      </TouchableOpacity>
+                      <TextInput
+                        style={cardStyles.stepInput}
+                        value={height}
+                        onChangeText={setHeight}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor={colors.muted}
+                      />
+                      <TouchableOpacity
+                        style={cardStyles.stepBtn}
+                        onPress={() => setHeight((v) => String((Number(v) || 0) + heightStep))}
+                      >
+                        <Text style={cardStyles.stepBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      style={cardStyles.bwToggle}
+                      onPress={() => setDistanceUnit((u) => (u === "in" ? "cm" : "in"))}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={cardStyles.bwToggleText}>{distanceUnit}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={cardStyles.fieldLabel}>
+                    {bodyweight ? `Added weight (${unit})` : `Weight (${unit})`}
+                  </Text>
+                  <View style={cardStyles.weightRow}>
+                    <View style={[cardStyles.stepper, { flex: 1 }]}>
+                      <TouchableOpacity
+                        style={cardStyles.stepBtn}
+                        onPress={() => setWeight((v) => String(Math.max(0, (Number(v) || 0) - weightStep)))}
+                      >
+                        <Text style={cardStyles.stepBtnText}>−</Text>
+                      </TouchableOpacity>
+                      <TextInput
+                        style={cardStyles.stepInput}
+                        value={weight}
+                        onChangeText={setWeight}
+                        keyboardType="decimal-pad"
+                        placeholder="0"
+                        placeholderTextColor={colors.muted}
+                      />
+                      <TouchableOpacity
+                        style={cardStyles.stepBtn}
+                        onPress={() => setWeight((v) => String((Number(v) || 0) + weightStep))}
+                      >
+                        <Text style={cardStyles.stepBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      style={[cardStyles.bwToggle, bodyweight && cardStyles.bwToggleActive]}
+                      onPress={() => setBodyweight((b) => !b)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[cardStyles.bwToggleText, bodyweight && cardStyles.bwToggleTextActive]}>BW</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </View>
             <View style={{ flex: 2 }}>
               <Text style={cardStyles.fieldLabel}>Reps</Text>
@@ -712,6 +785,7 @@ interface SupersetCardProps {
   expandedId: number | null;
   setExpandedId: (id: number | null) => void;
   defaultUnit: Unit;
+  defaultDistanceUnit: DistanceUnit;
   logSet: (body: Parameters<typeof api.sessions.logSet>[1]) => void;
   logPending: boolean;
   deleteSet: (setId: number) => void;
@@ -727,6 +801,7 @@ function SupersetCard({
   expandedId,
   setExpandedId,
   defaultUnit,
+  defaultDistanceUnit,
   logSet,
   logPending,
   deleteSet,
@@ -769,6 +844,7 @@ function SupersetCard({
                 expanded={expandedId === id}
                 onToggle={() => setExpandedId(expandedId === id ? null : id)}
                 defaultUnit={defaultUnit}
+                defaultDistanceUnit={defaultDistanceUnit}
                 logSet={logSet}
                 logPending={logPending}
                 deleteSet={deleteSet}

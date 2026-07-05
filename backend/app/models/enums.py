@@ -13,6 +13,11 @@ class UnitEnum(str, enum.Enum):
     kg = "kg"
 
 
+class DistanceUnitEnum(str, enum.Enum):
+    inches = "in"
+    cm = "cm"
+
+
 class ClientStatusEnum(str, enum.Enum):
     active = "active"
     archived = "archived"
@@ -44,6 +49,7 @@ class SetStatusEnum(str, enum.Enum):
 class PrTypeEnum(str, enum.Enum):
     weight_at_reps = "weight_at_reps"
     estimated_1rm = "estimated_1rm"
+    height_at_reps = "height_at_reps"
 
 
 class ActivityEventTypeEnum(str, enum.Enum):

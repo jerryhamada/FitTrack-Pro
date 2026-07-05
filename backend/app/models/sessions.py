@@ -6,7 +6,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, St
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .enums import EffortTypeEnum, PrTypeEnum, SetStatusEnum, UnitEnum
+from .enums import DistanceUnitEnum, EffortTypeEnum, PrTypeEnum, SetStatusEnum, UnitEnum
 
 
 class WorkoutSession(Base):
@@ -66,6 +66,13 @@ class SetEntry(Base):
     set_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     weight: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     weight_unit: Mapped[UnitEnum | None] = mapped_column(Enum(UnitEnum, name="unit_enum"), nullable=True)
+    # Populated instead of weight/weight_unit for height-tracked exercises (box jumps,
+    # box-assisted push-ups) — see Exercise.tracks_height.
+    height: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    height_unit: Mapped[DistanceUnitEnum | None] = mapped_column(
+        Enum(DistanceUnitEnum, name="distance_unit_enum", values_callable=lambda e: [m.value for m in e]),
+        nullable=True,
+    )
     is_per_side: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     effort_value: Mapped[float | None] = mapped_column(Numeric, nullable=True)

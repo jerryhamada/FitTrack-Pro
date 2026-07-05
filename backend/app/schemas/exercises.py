@@ -15,6 +15,8 @@ class ExerciseCreate(BaseModel):
     exercise_type: Literal["compound", "isolation"] | None = None
     demo_media_url: str | None = None
     instructions_steps: list[str] | None = None
+    tracks_height: bool = False
+    invert_difficulty: bool = False
     notes: str | None = None
 
 
@@ -28,6 +30,8 @@ class ExerciseUpdate(BaseModel):
     exercise_type: Literal["compound", "isolation"] | None = None
     demo_media_url: str | None = None
     instructions_steps: list[str] | None = None
+    tracks_height: bool | None = None
+    invert_difficulty: bool | None = None
     notes: str | None = None
 
 
@@ -44,6 +48,8 @@ class ExerciseOut(BaseModel):
     exercise_type: str | None = None
     demo_media_url: str | None = None
     instructions_steps: list[str] | None = None
+    tracks_height: bool = False
+    invert_difficulty: bool = False
     notes: str | None
     is_custom: bool = False
     is_favorite: bool = False
