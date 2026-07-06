@@ -7,6 +7,16 @@ from pydantic import BaseModel
 from ..models.enums import UnitEnum
 
 
+class InviteRedeemRequest(BaseModel):
+    token: str
+
+
+class InviteRedeemResponse(BaseModel):
+    client_id: int
+    client_name: str
+    trainer_name: str | None
+
+
 class PortalNextSession(BaseModel):
     scheduled_at: datetime
     trainer_name: str | None

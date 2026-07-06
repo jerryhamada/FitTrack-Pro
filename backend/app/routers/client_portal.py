@@ -11,12 +11,12 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import _verify_token
 from ..config import get_settings
 from ..database import get_db
-from ..models.enums import ClientStatusEnum, PrTypeEnum, RoleEnum, ScheduledStatusEnum
+from ..models.enums import ClientStatusEnum, InviteStatusEnum, PrTypeEnum, RoleEnum, ScheduledStatusEnum
 from ..models.exercises import Exercise
 from ..models.identity import TrainerProfile, User
 from ..models.programs import ClientProgram, ClientProgramDay, ClientProgramExercise, Program
 from ..models.prs import PR
-from ..models.roster import BodyweightLog, Client
+from ..models.roster import BodyweightLog, Client, Invite
 from ..models.schedule import ScheduledSession
 from ..models.sessions import SetEntry, WorkoutSession
 from ..schemas.client_portal import (
@@ -28,6 +28,8 @@ from ..schemas.client_portal import (
     ClientProgress,
     ClientProgressStats,
     ClientWorkoutDetail,
+    InviteRedeemRequest,
+    InviteRedeemResponse,
     PortalCurrentProgram,
     PortalExerciseRef,
     PortalHistoryItem,
@@ -46,6 +48,7 @@ from ..schemas.client_portal import (
     StrengthPoint,
     StrengthSeries,
 )
+from ..services.invites import InviteError, InviteExpiredError, validate_invite_for_redemption
 from ..services.one_rm import estimated_1rm
 from ..services.units import from_lbs, to_lbs, total_load
 from ..services.volume import session_total_volume
@@ -89,6 +92,97 @@ def get_current_client(
     if client is None:
         raise HTTPException(status_code=403, detail="No client account linked to this login")
     return client
+
+
+def get_clerk_payload(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
+    """Verified Clerk JWT claims for a login that may not be linked to a Client
+    yet — this is the auth used during invite redemption, before the link exists."""
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return _verify_token(credentials)
+
+
+@router.post("/redeem-invite", response_model=InviteRedeemResponse)
+def redeem_invite(
+    body: InviteRedeemRequest,
+    payload: dict = Depends(get_clerk_payload),
+    db: Session = Depends(get_db),
+):
+    """Consume an invite token and link the caller's Clerk login to the invited
+    Client row. This is the step that turns a shared invite link into a working
+    client portal login. Errors are specific and user-safe (expired vs already
+    used vs invalid) rather than a generic 500."""
+    invite = (
+        db.query(Invite)
+        .options(joinedload(Invite.client))
+        .filter(Invite.token == body.token)
+        .first()
+    )
+    try:
+        validate_invite_for_redemption(invite)
+    except InviteExpiredError as e:
+        db.commit()  # persist the pending -> expired status flip
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=e.detail)
+    except InviteError as e:
+        code = status.HTTP_404_NOT_FOUND if invite is None else status.HTTP_409_CONFLICT
+        # Idempotent re-redeem: the same login tapping an already-used invite for
+        # the client it's already linked to is a success, not an error.
+        if invite is not None and invite.status == InviteStatusEnum.accepted:
+            linked_user = (
+                db.query(User)
+                .filter(User.clerk_user_id == payload["sub"], User.role == RoleEnum.client)
+                .first()
+            )
+            if linked_user is not None and invite.client.user_id == linked_user.id:
+                trainer = db.query(User).filter(User.id == invite.client.trainer_id).first()
+                return InviteRedeemResponse(
+                    client_id=invite.client.id,
+                    client_name=invite.client.name,
+                    trainer_name=trainer.name if trainer else None,
+                )
+        raise HTTPException(status_code=code, detail=e.detail)
+
+    client = invite.client
+    if client.user_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This client account is already linked to another login.",
+        )
+
+    clerk_user_id: str = payload["sub"]
+    user = (
+        db.query(User)
+        .filter(User.clerk_user_id == clerk_user_id, User.role == RoleEnum.client)
+        .first()
+    )
+    if user is None:
+        user = User(
+            clerk_user_id=clerk_user_id,
+            role=RoleEnum.client,
+            email=payload.get("email") or client.email,
+            name=payload.get("name") or client.name,
+        )
+        db.add(user)
+        db.flush()
+    elif db.query(Client).filter(Client.user_id == user.id).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This login is already linked to a different client account.",
+        )
+
+    client.user_id = user.id
+    invite.status = InviteStatusEnum.accepted
+    invite.accepted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    trainer = db.query(User).filter(User.id == client.trainer_id).first()
+    return InviteRedeemResponse(
+        client_id=client.id,
+        client_name=client.name,
+        trainer_name=trainer.name if trainer else None,
+    )
 
 
 @router.get("/dashboard", response_model=ClientPortalDashboard)

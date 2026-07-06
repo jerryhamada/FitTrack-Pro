@@ -90,16 +90,31 @@ export class ApiError extends Error {
   }
 }
 
+/** The request never reached the server (airplane mode, gym dead zone, DNS).
+ * Distinct from ApiError so callers can queue-and-retry instead of erroring —
+ * a 4xx means the server said no; a NetworkError means nobody heard us. */
+export class NetworkError extends Error {
+  constructor(message = "No connection — check your network and try again.") {
+    super(message);
+    this.name = "NetworkError";
+  }
+}
+
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = _getToken ? await _getToken() : null;
-  return fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    // fetch rejects (TypeError) only when the request couldn't be made at all.
+    throw new NetworkError();
+  }
 }
 
 async function req<T = void>(path: string, init: RequestInit = {}): Promise<T> {
@@ -280,6 +295,8 @@ export const api = {
       ),
     logBodyweight: (weight: number, clientId?: number): Promise<BodyweightLog> =>
       req<BodyweightLog>(`/client-portal/bodyweight${qs({ client_id: clientId })}`, jsonBody("POST", { weight })),
+    redeemInvite: (token: string): Promise<{ client_id: number; client_name: string; trainer_name: string | null }> =>
+      req(`/client-portal/redeem-invite`, jsonBody("POST", { token })),
   },
 
   notifications: {

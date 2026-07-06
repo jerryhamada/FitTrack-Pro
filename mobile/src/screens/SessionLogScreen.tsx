@@ -17,7 +17,8 @@ import BottomSheet from "../components/BottomSheet";
 import Btn from "../components/Btn";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
-import { api } from "../lib/api";
+import { api, NetworkError } from "../lib/api";
+import { useSetWriteQueue } from "../lib/offlineSetQueue";
 import { formatHeight, formatWeight } from "../lib/utils";
 import type { DistanceUnit, Exercise, SetEntry, SetStatus, Unit } from "../types";
 import type { RootStackParamList } from "../navigation/types";
@@ -139,6 +140,70 @@ export default function SessionLogScreen() {
     return map;
   }, [session?.sets]);
 
+  // ----- offline set queue (gym dead zones) -----
+  // Set writes that failed with a NetworkError are queued and retried when
+  // connectivity returns (see lib/offlineSetQueue.ts / lib/retryQueue.ts).
+  const { pending, enqueue, remove: removeQueued, flush } = useSetWriteQueue(sessionId);
+
+  // When queued writes drain in the background (reconnect), refetch the session
+  // so optimistic pending rows are replaced by real server sets (with PR flags).
+  const prevPendingCount = useRef(pending.length);
+  useEffect(() => {
+    if (pending.length < prevPendingCount.current) {
+      qc.invalidateQueries({ queryKey: ["session", sessionId] });
+    }
+    prevPendingCount.current = pending.length;
+  }, [pending.length, qc, sessionId]);
+
+  // Merge server sets with optimistic pending ones. Pending sets get negative
+  // temp ids (mapped back to their queue entry for delete), and sets with a
+  // queued delete are hidden immediately.
+  const { displaySets, queueIdByTempId } = useMemo(() => {
+    const pendingDeleteIds = new Set<number>();
+    for (const p of pending) if (p.kind === "deleteSet") pendingDeleteIds.add(p.setId);
+    const map = new Map<number, SetEntry[]>();
+    for (const [exId, arr] of setsByExercise) {
+      map.set(
+        exId,
+        arr.filter((s) => !pendingDeleteIds.has(s.id))
+      );
+    }
+    const byTemp = new Map<number, string>();
+    let temp = -1;
+    for (const p of pending) {
+      if (p.kind !== "logSet") continue;
+      const exId = p.body.exercise_id;
+      const arr = map.get(exId) ?? [];
+      byTemp.set(temp, p.id);
+      arr.push({
+        id: temp,
+        session_id: sessionId,
+        exercise_id: exId,
+        exercise_name: exerciseById.get(exId)?.name ?? "",
+        order_index: 0,
+        set_number: arr.length + 1,
+        weight: (p.body.weight as number | undefined) ?? null,
+        weight_unit: (p.body.weight_unit as SetEntry["weight_unit"]) ?? null,
+        height: (p.body.height as number | undefined) ?? null,
+        height_unit: (p.body.height_unit as SetEntry["height_unit"]) ?? null,
+        is_per_side: false,
+        reps: (p.body.reps as number | undefined) ?? null,
+        effort_value: null,
+        effort_type: null,
+        set_modifier: null,
+        status: "completed" as SetStatus,
+        superset_group: null,
+        notes: null,
+        is_pr: false,
+        pr_type: null,
+        created_at: new Date(p.createdAt).toISOString(),
+      });
+      map.set(exId, arr);
+      temp -= 1;
+    }
+    return { displaySets: map, queueIdByTempId: byTemp };
+  }, [setsByExercise, pending, exerciseById, sessionId]);
+
   // Exercises eligible to group: standalone only (already-grouped ones can't re-group).
   const groupableIds = useMemo(
     () => membership.filter((m) => !m.superset_group_id).map((m) => m.exercise_id),
@@ -178,14 +243,44 @@ export default function SessionLogScreen() {
       qc.invalidateQueries({ queryKey: ["session", sessionId] });
       if (set.is_pr) celebratePr(set);
     },
-    onError: (e) => Alert.alert("Error", (e as Error).message),
+    onError: (e, body) => {
+      if (e instanceof NetworkError) {
+        // Gym dead zone — keep the set. It shows immediately as a pending row
+        // and syncs when connectivity returns (PR detection runs then).
+        void enqueue({ kind: "logSet", sessionId, body: body as { exercise_id: number } & Record<string, unknown> });
+        return;
+      }
+      Alert.alert("Error", (e as Error).message);
+    },
   });
 
   const deleteSet = useMutation({
     mutationFn: (setId: number) => api.sessions.deleteSet(setId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["session", sessionId] }),
-    onError: (e) => Alert.alert("Error", (e as Error).message),
+    onError: (e, setId) => {
+      if (e instanceof NetworkError) {
+        void enqueue({ kind: "deleteSet", sessionId, setId });
+        return;
+      }
+      Alert.alert("Error", (e as Error).message);
+    },
   });
+
+  // Deleting a pending (not-yet-synced) set just drops it from the queue.
+  function handleDeleteSet(setId: number) {
+    if (setId < 0) {
+      const queueId = queueIdByTempId.get(setId);
+      Alert.alert("Delete set?", "This set hasn't synced yet.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => queueId && void removeQueued(queueId) },
+      ]);
+      return;
+    }
+    Alert.alert("Delete set?", "", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => deleteSet.mutate(setId) },
+    ]);
+  }
 
   const addExercise = useMutation({
     mutationFn: (exId: number) => api.sessions.addExercise(sessionId, exId),
@@ -244,8 +339,22 @@ export default function SessionLogScreen() {
     onError: (e) => Alert.alert("Error", (e as Error).message),
   });
 
-  function finishPressed() {
+  async function finishPressed() {
     if (!session) return;
+    // Completing computes totals + PRs server-side, so every queued set must
+    // land first — otherwise the summary silently misses offline sets.
+    if (pending.length > 0) {
+      const { remaining } = await flush();
+      if (remaining > 0) {
+        Alert.alert(
+          "Still syncing",
+          `${remaining} logged set${remaining === 1 ? " hasn't" : "s haven't"} reached the server yet. Reconnect and tap Finish again so totals and PRs come out right.`
+        );
+        return;
+      }
+      complete.mutate();
+      return;
+    }
     if (session.sets.length === 0) {
       Alert.alert("No sets logged", "End workout with no sets logged?", [
         { text: "Cancel", style: "cancel" },
@@ -270,7 +379,7 @@ export default function SessionLogScreen() {
       ),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, session?.sets.length, complete.isPending]);
+  }, [navigation, session?.sets.length, complete.isPending, pending.length]);
 
   if (isLoading || !session) return <Spinner />;
 
@@ -342,6 +451,16 @@ export default function SessionLogScreen() {
         )}
       </View>
 
+      {/* Offline sync banner */}
+      {pending.length > 0 && (
+        <TouchableOpacity style={styles.offlineBar} onPress={() => void flush()} activeOpacity={0.8}>
+          <Text style={styles.offlineBarText}>
+            📡 {pending.length} set{pending.length === 1 ? "" : "s"} saved offline — will sync when
+            you're back online. Tap to retry now.
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
         {/* Today's plan (program day pre-fill) */}
         {session.planned_exercises.length > 0 && (
@@ -409,7 +528,7 @@ export default function SessionLogScreen() {
               key={`ex-${block.exerciseId}`}
               exercise={exerciseById.get(block.exerciseId)}
               exerciseId={block.exerciseId}
-              sets={setsByExercise.get(block.exerciseId) ?? []}
+              sets={displaySets.get(block.exerciseId) ?? []}
               insight={insightByExercise.get(block.exerciseId)}
               expanded={expandedId === block.exerciseId}
               onToggle={() => setExpandedId(expandedId === block.exerciseId ? null : block.exerciseId)}
@@ -417,12 +536,7 @@ export default function SessionLogScreen() {
               defaultDistanceUnit={trainer?.profile?.default_distance_unit ?? "in"}
               logSet={(body) => logSet.mutate(body)}
               logPending={logSet.isPending}
-              deleteSet={(setId) =>
-                Alert.alert("Delete set?", "", [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Delete", style: "destructive", onPress: () => deleteSet.mutate(setId) },
-                ])
-              }
+              deleteSet={handleDeleteSet}
               selectMode={selectMode}
               selected={selected.has(block.exerciseId)}
               onSelectToggle={() => toggleSelected(block.exerciseId)}
@@ -433,7 +547,7 @@ export default function SessionLogScreen() {
               groupId={block.groupId}
               memberIds={block.memberIds}
               exerciseById={exerciseById}
-              setsByExercise={setsByExercise}
+              setsByExercise={displaySets}
               insightByExercise={insightByExercise}
               expandedId={expandedId}
               setExpandedId={setExpandedId}
@@ -441,12 +555,7 @@ export default function SessionLogScreen() {
               defaultDistanceUnit={trainer?.profile?.default_distance_unit ?? "in"}
               logSet={(body) => logSet.mutate(body)}
               logPending={logSet.isPending}
-              deleteSet={(setId) =>
-                Alert.alert("Delete set?", "", [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Delete", style: "destructive", onPress: () => deleteSet.mutate(setId) },
-                ])
-              }
+              deleteSet={handleDeleteSet}
               onUngroup={() =>
                 Alert.alert("Ungroup superset", "Exercises become standalone. Logged sets are kept.", [
                   { text: "Cancel", style: "cancel" },
@@ -1078,6 +1187,14 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: font.sm,
   },
+  offlineBar: {
+    backgroundColor: colors.accentDim,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  offlineBarText: { color: colors.white, fontSize: font.xs, fontWeight: "600" },
   content: { padding: spacing.base, gap: spacing.md, paddingBottom: 48 },
   section: { gap: spacing.xs },
   sectionTitle: {
