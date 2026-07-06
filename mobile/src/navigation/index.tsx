@@ -3,7 +3,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,8 +25,10 @@ import SettingsScreen from "../screens/SettingsScreen";
 import SignInScreen from "../screens/SignInScreen";
 import SignUpScreen from "../screens/SignUpScreen";
 import ClientPreviewScreen from "../screens/ClientPreviewScreen";
+import { usePendingInvite } from "../contexts/PendingInvite";
 import { useRoleOverride } from "../contexts/RoleOverride";
 import { api } from "../lib/api";
+import ClientTabs from "./ClientTabs";
 import { DEV_BYPASS_AUTH } from "../lib/devAuth";
 import { IS_DEV_BUILD } from "../lib/env";
 import { colors } from "../theme";
@@ -265,6 +267,95 @@ function AppNavigator() {
   );
 }
 
+function FullScreenStatus({ children }: { children: React.ReactNode }) {
+  return <View style={styles.statusScreen}>{children}</View>;
+}
+
+/**
+ * Post-auth routing. If the login arrived through an invite link, redeem it
+ * first (that's what links the login to the trainer's Client row and makes it
+ * a client account), then route by the backend's role resolution: clients get
+ * the client portal tabs, everyone else gets the trainer app.
+ */
+function SignedInRouter() {
+  const { token, clearToken } = usePendingInvite();
+  const { signOut } = useAuth();
+  const qc = useQueryClient();
+
+  const whoami = useQuery({
+    queryKey: ["whoami"],
+    queryFn: api.auth.whoami,
+    enabled: token === null,
+    staleTime: Infinity,
+  });
+
+  const redeem = useMutation({
+    mutationFn: () => api.clientPortal.redeemInvite(token!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["whoami"] });
+      clearToken();
+    },
+    meta: { skipGlobalToast: true },
+  });
+  const { mutate: redeemMutate, status: redeemStatus } = redeem;
+
+  useEffect(() => {
+    if (token !== null && redeemStatus === "idle") redeemMutate();
+  }, [token, redeemStatus, redeemMutate]);
+
+  if (token !== null) {
+    if (redeem.isError) {
+      return (
+        <FullScreenStatus>
+          <Text style={styles.statusTitle}>Couldn't join with this invite</Text>
+          <Text style={styles.statusMessage}>{(redeem.error as Error).message}</Text>
+          <TouchableOpacity style={styles.statusBtn} onPress={() => redeem.reset()}>
+            <Text style={styles.statusBtnText}>Try again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => signOut()}>
+            <Text style={styles.statusLink}>Sign out</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={clearToken}>
+            <Text style={styles.statusLink}>Continue without the invite</Text>
+          </TouchableOpacity>
+        </FullScreenStatus>
+      );
+    }
+    return (
+      <FullScreenStatus>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.statusMessage}>Linking your account to your trainer...</Text>
+      </FullScreenStatus>
+    );
+  }
+
+  if (whoami.isError) {
+    return (
+      <FullScreenStatus>
+        <Text style={styles.statusTitle}>Couldn't load your account</Text>
+        <Text style={styles.statusMessage}>{(whoami.error as Error).message}</Text>
+        <TouchableOpacity style={styles.statusBtn} onPress={() => whoami.refetch()}>
+          <Text style={styles.statusBtnText}>Try again</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => signOut()}>
+          <Text style={styles.statusLink}>Sign out</Text>
+        </TouchableOpacity>
+      </FullScreenStatus>
+    );
+  }
+  if (whoami.data === undefined) {
+    return (
+      <FullScreenStatus>
+        <ActivityIndicator color={colors.accent} />
+      </FullScreenStatus>
+    );
+  }
+
+  // role "trainer" → trainer app; role null → brand-new trainer signup (the
+  // backend auto-provisions the trainer account on first trainer API call).
+  return whoami.data.role === "client" ? <ClientTabs includeAccount /> : <AppNavigator />;
+}
+
 export default function RootNavigator() {
   const { isSignedIn, isLoaded } = useAuth();
   const { override } = useRoleOverride();
@@ -275,10 +366,29 @@ export default function RootNavigator() {
 
   if (DEV_BYPASS_AUTH) return <AppNavigator />;
   if (!isLoaded) return null;
-  return isSignedIn ? <AppNavigator /> : <AuthNavigator />;
+  if (!isSignedIn) return <AuthNavigator />;
+  return <SignedInRouter />;
 }
 
 const styles = StyleSheet.create({
+  statusScreen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+    gap: 14,
+  },
+  statusTitle: { color: colors.white, fontSize: 17, fontWeight: "700", textAlign: "center" },
+  statusMessage: { color: colors.muted, fontSize: 14, textAlign: "center", lineHeight: 20 },
+  statusBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  statusBtnText: { color: "#000", fontSize: 14, fontWeight: "700" },
+  statusLink: { color: colors.muted, fontSize: 13, textDecorationLine: "underline" },
   tabSlot: {
     flex: 1,
     alignItems: "center",

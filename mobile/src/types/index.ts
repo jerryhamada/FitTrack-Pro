@@ -647,3 +647,9 @@ export interface ClientProgress {
   exercise_options: ProgressExerciseOption[];
   default_exercise_id: number | null;
 }
+
+export interface WhoAmI {
+  role: "trainer" | "client" | null;
+  client_id: number | null;
+  client_name: string | null;
+}

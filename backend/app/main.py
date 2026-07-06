@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 
 from .routers import (
     activity,
+    auth_session,
     calendar,
     client_insights,
     client_portal,
@@ -36,6 +37,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_session.router)
 app.include_router(trainer.router)
 app.include_router(dashboard.router)
 app.include_router(clients.router)

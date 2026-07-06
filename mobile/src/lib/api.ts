@@ -38,6 +38,7 @@ import type {
   SetEntry,
   Trainer,
   TrainerProfile,
+  WhoAmI,
   VolumeByCategoryResponse,
   WorkoutSession,
 } from "../types";
@@ -297,6 +298,12 @@ export const api = {
       req<BodyweightLog>(`/client-portal/bodyweight${qs({ client_id: clientId })}`, jsonBody("POST", { weight })),
     redeemInvite: (token: string): Promise<{ client_id: number; client_name: string; trainer_name: string | null }> =>
       req(`/client-portal/redeem-invite`, jsonBody("POST", { token })),
+    invitePreview: (token: string): Promise<{ client_name: string; trainer_name: string | null }> =>
+      req(`/client-portal/invites/${encodeURIComponent(token)}`),
+  },
+
+  auth: {
+    whoami: (): Promise<WhoAmI> => req<WhoAmI>("/auth/whoami"),
   },
 
   notifications: {

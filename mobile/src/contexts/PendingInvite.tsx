@@ -1,0 +1,71 @@
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { Linking } from "react-native";
+
+/**
+ * Holds a client-invite token captured before/while the user authenticates, so
+ * the signup flow knows this login should become a CLIENT account and the
+ * navigator knows to redeem the invite right after sign-in/sign-up.
+ *
+ * Tokens arrive via deep link (liftiq://invite/<token>, or the shared https
+ * invite URL once universal links are configured) or manual paste on the
+ * signup screen.
+ */
+
+// token_urlsafe(24) server-side — url-safe base64, no padding.
+const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
+
+export function parseInviteToken(input: string): string | null {
+  const raw = input.trim();
+  if (TOKEN_RE.test(raw)) return raw;
+  // Any URL shape that contains an invite/<token> path segment, including
+  // Expo Go dev URLs (exp://host/--/invite/<token>).
+  const match = raw.match(/invite\/([A-Za-z0-9_-]+)/);
+  if (match && TOKEN_RE.test(match[1])) return match[1];
+  return null;
+}
+
+interface PendingInviteState {
+  token: string | null;
+  setToken: (token: string) => void;
+  clearToken: () => void;
+}
+
+const PendingInviteContext = createContext<PendingInviteState>({
+  token: null,
+  setToken: () => {},
+  clearToken: () => {},
+});
+
+export function PendingInviteProvider({ children }: { children: ReactNode }) {
+  const [token, setTokenState] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Linking.getInitialURL().then((url) => {
+      if (cancelled || !url) return;
+      const parsed = parseInviteToken(url);
+      if (parsed) setTokenState(parsed);
+    });
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      const parsed = parseInviteToken(url);
+      if (parsed) setTokenState(parsed);
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  const setToken = useCallback((t: string) => setTokenState(t), []);
+  const clearToken = useCallback(() => setTokenState(null), []);
+
+  return (
+    <PendingInviteContext.Provider value={{ token, setToken, clearToken }}>
+      {children}
+    </PendingInviteContext.Provider>
+  );
+}
+
+export function usePendingInvite(): PendingInviteState {
+  return useContext(PendingInviteContext);
+}

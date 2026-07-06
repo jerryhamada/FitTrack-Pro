@@ -56,6 +56,21 @@ def _verify_token(credentials: HTTPAuthorizationCredentials) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {e}")
 
 
+def get_clerk_payload(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
+    """Verified Clerk JWT claims without any role requirement or local user lookup —
+    used where a login may not be linked to anything yet (invite redemption, whoami).
+
+    DEV ONLY: with DEV_AUTH_BYPASS a synthetic payload is returned so these
+    endpoints work without a Clerk token, mirroring _get_dev_bypass_trainer."""
+    if get_settings().dev_auth_bypass:
+        return {"sub": "dev_bypass", "email": "dev@local.test", "name": "Dev Trainer"}
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return _verify_token(credentials)
+
+
 def get_current_trainer(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -73,6 +88,20 @@ def get_current_trainer(
     user = db.query(User).filter(User.clerk_user_id == clerk_user_id, User.role == RoleEnum.trainer).first()
     if user is not None:
         return user
+
+    # A login that redeemed a client invite must never be silently auto-provisioned
+    # into a trainer account just because it hit a trainer endpoint.
+    is_client = (
+        db.query(User.id)
+        .filter(User.clerk_user_id == clerk_user_id, User.role == RoleEnum.client)
+        .first()
+        is not None
+    )
+    if is_client:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This login belongs to a client account.",
+        )
 
     user = User(
         clerk_user_id=clerk_user_id,

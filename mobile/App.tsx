@@ -5,6 +5,7 @@ import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react
 import { useEffect } from "react";
 import { Alert, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { PendingInviteProvider } from "./src/contexts/PendingInvite";
 import { RoleOverrideProvider } from "./src/contexts/RoleOverride";
 import { setTokenGetter, ApiError } from "./src/lib/api";
 import RootNavigator from "./src/navigation";
@@ -56,11 +57,13 @@ export default function App() {
         <QueryClientProvider client={qc}>
           <SafeAreaProvider>
             <RoleOverrideProvider>
-              <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-              <NavigationContainer theme={NAV_THEME}>
-                <AuthSync />
-                <RootNavigator />
-              </NavigationContainer>
+              <PendingInviteProvider>
+                <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+                <NavigationContainer theme={NAV_THEME}>
+                  <AuthSync />
+                  <RootNavigator />
+                </NavigationContainer>
+              </PendingInviteProvider>
             </RoleOverrideProvider>
           </SafeAreaProvider>
         </QueryClientProvider>

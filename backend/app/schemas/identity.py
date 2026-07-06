@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 from ..models.enums import DistanceUnitEnum, UnitEnum
@@ -31,3 +33,13 @@ class TrainerOut(BaseModel):
     email: str | None
     name: str | None
     profile: TrainerProfileOut | None = None
+
+
+class WhoAmIOut(BaseModel):
+    """Role resolution for a verified login, used by the apps to route after
+    sign-in/sign-up. role is None for a brand-new login that isn't provisioned
+    as a trainer or linked to a client yet."""
+
+    role: Literal["trainer", "client"] | None
+    client_id: int | None = None
+    client_name: str | None = None

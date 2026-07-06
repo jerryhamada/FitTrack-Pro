@@ -17,6 +17,13 @@ class InviteRedeemResponse(BaseModel):
     trainer_name: str | None
 
 
+class InvitePreviewOut(BaseModel):
+    """Pre-signup peek at a valid invite so the app can show who it's for."""
+
+    client_name: str
+    trainer_name: str | None
+
+
 class PortalNextSession(BaseModel):
     scheduled_at: datetime
     trainer_name: str | None

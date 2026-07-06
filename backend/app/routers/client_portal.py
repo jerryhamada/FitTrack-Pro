@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from ..auth import _verify_token
+from ..auth import _verify_token, get_clerk_payload
 from ..config import get_settings
 from ..database import get_db
 from ..models.enums import ClientStatusEnum, InviteStatusEnum, PrTypeEnum, RoleEnum, ScheduledStatusEnum
@@ -28,6 +28,7 @@ from ..schemas.client_portal import (
     ClientProgress,
     ClientProgressStats,
     ClientWorkoutDetail,
+    InvitePreviewOut,
     InviteRedeemRequest,
     InviteRedeemResponse,
     PortalCurrentProgram,
@@ -94,14 +95,31 @@ def get_current_client(
     return client
 
 
-def get_clerk_payload(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> dict:
-    """Verified Clerk JWT claims for a login that may not be linked to a Client
-    yet — this is the auth used during invite redemption, before the link exists."""
-    if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    return _verify_token(credentials)
+@router.get("/invites/{token}", response_model=InvitePreviewOut)
+def preview_invite(token: str, db: Session = Depends(get_db)):
+    """Unauthenticated peek at an invite (the token itself is the secret) so the
+    signup screen can show who the invite is for before an account exists. Uses
+    the same validation and error semantics as redemption."""
+    invite = (
+        db.query(Invite)
+        .options(joinedload(Invite.client))
+        .filter(Invite.token == token)
+        .first()
+    )
+    try:
+        validate_invite_for_redemption(invite)
+    except InviteExpiredError as e:
+        db.commit()  # persist the pending -> expired status flip
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=e.detail)
+    except InviteError as e:
+        code = status.HTTP_404_NOT_FOUND if invite is None else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail=e.detail)
+
+    trainer = db.query(User).filter(User.id == invite.client.trainer_id).first()
+    return InvitePreviewOut(
+        client_name=invite.client.name,
+        trainer_name=trainer.name if trainer else None,
+    )
 
 
 @router.post("/redeem-invite", response_model=InviteRedeemResponse)
@@ -152,6 +170,21 @@ def redeem_invite(
         )
 
     clerk_user_id: str = payload["sub"]
+
+    # One login = one role. A trainer redeeming a client invite would otherwise
+    # end up with two conflicting users rows for the same Clerk identity.
+    is_trainer = (
+        db.query(User.id)
+        .filter(User.clerk_user_id == clerk_user_id, User.role == RoleEnum.trainer)
+        .first()
+        is not None
+    )
+    if is_trainer:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This login is a trainer account — clients must join with their own login.",
+        )
+
     user = (
         db.query(User)
         .filter(User.clerk_user_id == clerk_user_id, User.role == RoleEnum.client)
