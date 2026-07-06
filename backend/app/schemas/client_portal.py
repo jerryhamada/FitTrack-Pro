@@ -86,6 +86,7 @@ class PortalExerciseRef(BaseModel):
 
 class PortalHistoryItem(BaseModel):
     id: int
+    title: str  # derived from the workout's muscle groups (e.g. "Push Day", "Glutes Day")
     started_at: datetime
     duration_seconds: int | None
     exercises: list[PortalExerciseRef]
@@ -109,6 +110,8 @@ class PortalHistorySet(BaseModel):
     set_number: int
     weight: float | None
     weight_unit: str | None
+    height: float | None = None  # for height-tracked exercises (box jumps, box push-ups)
+    height_unit: str | None = None
     reps: int | None
     effort_value: float | None
     effort_type: str | None
@@ -128,6 +131,7 @@ class PortalWorkoutExercise(BaseModel):
 
 class ClientWorkoutDetail(BaseModel):
     id: int
+    title: str  # derived from the workout's muscle groups (e.g. "Push Day", "Glutes Day")
     started_at: datetime
     duration_seconds: int | None
     total_volume: float

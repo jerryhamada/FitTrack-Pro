@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "LiftIQ",
-    "slug": "fittrack-pro-mobile",
+    "slug": "liftiq",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,7 +9,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.jerryhamada.liftiq",
-      "buildNumber": "1"
+      "buildNumber": "2",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.jerryhamada.liftiq",
@@ -28,6 +31,12 @@
       "expo-secure-store",
       "expo-web-browser",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2b86264e-5d4b-41ac-a6a2-b11d01e2d014"
+      }
+    },
+    "owner": "jerryhamada1"
   }
 }

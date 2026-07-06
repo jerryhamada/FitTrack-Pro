@@ -123,6 +123,9 @@ def portal_dashboard(client: Client = Depends(get_current_client), db: Session =
         .order_by(WorkoutSession.started_at.desc())
         .all()
     )
+    # Empty sessions (ended with no sets) aren't real workouts — exclude them so the
+    # counts here match the History screen.
+    completed = [s for s in completed if s.sets]
     completed_weeks = set()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     workouts_this_month = 0
@@ -323,6 +326,37 @@ def my_workouts(client: Client = Depends(get_current_client), db: Session = Depe
     )
 
 
+_PUSH = {"chest", "shoulders", "triceps"}
+_PULL = {"back", "biceps", "forearms"}
+_LEGS = {"quads", "hamstrings", "glutes", "calves"}
+
+
+def _workout_title(muscle_groups: list[str]) -> str:
+    """Give a completed workout a human headline derived from the muscle groups it
+    trained. A single dominant muscle reads as "Glutes Day"; a coherent split reads
+    as "Push Day" / "Pull Day" / "Leg Day"; broader mixes collapse to Upper/Lower/
+    Full Body. Falls back to "Workout" when nothing is tagged."""
+    distinct = list(dict.fromkeys(m for m in muscle_groups if m))
+    if not distinct:
+        return "Workout"
+    if len(distinct) == 1:
+        return f"{distinct[0].capitalize()} Day"
+    s = set(distinct)
+    if s <= _PUSH:
+        return "Push Day"
+    if s <= _PULL:
+        return "Pull Day"
+    if s <= _LEGS:
+        return "Leg Day"
+    if s <= {"core"}:
+        return "Core Day"
+    if s <= (_PUSH | _PULL):
+        return "Upper Body"
+    if s <= (_LEGS | {"core"}):
+        return "Lower Body"
+    return "Full Body"
+
+
 @router.get("/history", response_model=ClientHistory)
 def history(client: Client = Depends(get_current_client), db: Session = Depends(get_db)):
     """Read-only workout history for the client. Reads only workout/set data —
@@ -338,11 +372,14 @@ def history(client: Client = Depends(get_current_client), db: Session = Depends(
         .order_by(WorkoutSession.started_at.desc())
         .all()
     )
+    # Drop empty sessions (ended with no sets logged) — they aren't real workouts,
+    # so they shouldn't appear in the list or count toward totals/streak.
+    completed = [s for s in completed if s.sets]
 
-    # Exercise names for the condensed per-card list
+    # Exercise name + muscle group (for the condensed list and the derived title)
     ex_ids = {st.exercise_id for s in completed for st in s.sets}
-    names = {
-        e.id: e.name for e in db.query(Exercise).filter(Exercise.id.in_(ex_ids)).all()
+    ex_by_id = {
+        e.id: e for e in db.query(Exercise).filter(Exercise.id.in_(ex_ids)).all()
     } if ex_ids else {}
 
     completed_weeks = set()
@@ -356,12 +393,17 @@ def history(client: Client = Depends(get_current_client), db: Session = Depends(
         for st in s.sets:
             if st.exercise_id not in seen:
                 seen.append(st.exercise_id)
+        muscles = [ex_by_id[eid].muscle_group for eid in seen if eid in ex_by_id]
         items.append(
             PortalHistoryItem(
                 id=s.id,
+                title=_workout_title(muscles),
                 started_at=s.started_at,
                 duration_seconds=s.duration_seconds,
-                exercises=[PortalExerciseRef(id=eid, name=names.get(eid, "Exercise")) for eid in seen],
+                exercises=[
+                    PortalExerciseRef(id=eid, name=ex_by_id[eid].name if eid in ex_by_id else "Exercise")
+                    for eid in seen
+                ],
                 pr_count=sum(1 for st in s.sets if st.is_pr),
                 total_volume=round(session_total_volume(s.sets, client.preferred_unit), 1),
                 total_volume_unit=client.preferred_unit.value,
@@ -398,9 +440,10 @@ def workout_detail(
         raise HTTPException(status_code=404, detail="Workout not found")
 
     ex_ids = {st.exercise_id for st in workout.sets}
-    names = {
-        e.id: e.name for e in db.query(Exercise).filter(Exercise.id.in_(ex_ids)).all()
+    ex_by_id = {
+        e.id: e for e in db.query(Exercise).filter(Exercise.id.in_(ex_ids)).all()
     } if ex_ids else {}
+    names = {eid: e.name for eid, e in ex_by_id.items()}
     membership = {se.exercise_id: se for se in workout.exercises}
 
     grouped: dict[int, list] = defaultdict(list)
@@ -425,6 +468,8 @@ def workout_detail(
                     set_number=st.set_number,
                     weight=float(st.weight) if st.weight is not None else None,
                     weight_unit=st.weight_unit.value if st.weight_unit else None,
+                    height=float(st.height) if st.height is not None else None,
+                    height_unit=st.height_unit.value if st.height_unit else None,
                     reps=st.reps,
                     effort_value=float(st.effort_value) if st.effort_value is not None else None,
                     effort_type=st.effort_type.value if st.effort_type else None,
@@ -440,6 +485,7 @@ def workout_detail(
 
     return ClientWorkoutDetail(
         id=workout.id,
+        title=_workout_title([ex_by_id[eid].muscle_group for eid in order if eid in ex_by_id]),
         started_at=workout.started_at,
         duration_seconds=workout.duration_seconds,
         total_volume=round(session_total_volume(workout.sets, client.preferred_unit), 1),
