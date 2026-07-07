@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join LiftIQ</title>
+<style>
+  :root { --accent: #0a7d3c; --bg: #0f1115; --surface: #1a1d24; --border: #2a2f3a;
+          --text: #f5f7fa; --muted: #9aa4b2; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); margin: 0; padding: 24px;
+         min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { width: 100%; max-width: 420px; background: var(--surface);
+          border: 1px solid var(--border); border-radius: 18px; padding: 28px; }
+  .logo { text-align: center; font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+  .logo span { color: var(--accent); }
+  .sub { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .step { display: flex; gap: 12px; margin-bottom: 20px; }
+  .num { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--accent);
+         color: #fff; font-weight: 700; font-size: 14px; display: flex;
+         align-items: center; justify-content: center; }
+  .step-body { flex: 1; }
+  .step-title { font-weight: 600; font-size: 15px; margin: 2px 0 8px; }
+  .step-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  a.btn, button.btn { display: block; width: 100%; text-align: center; text-decoration: none;
+          background: var(--accent); color: #fff; font-weight: 700; font-size: 15px;
+          padding: 13px; border: none; border-radius: 12px; cursor: pointer; }
+  a.btn.secondary { background: transparent; color: var(--accent);
+          border: 1px solid var(--border); margin-top: 10px; }
+  .code-box { display: flex; gap: 8px; margin-top: 10px; }
+  .code { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+          padding: 11px; font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+          color: var(--accent); word-break: break-all; }
+  .copy { flex: 0 0 auto; background: var(--border); color: var(--text); border: none;
+          border-radius: 10px; padding: 0 16px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .error { text-align: center; color: var(--muted); font-size: 14px; line-height: 1.6; }
+  .hr { height: 1px; background: var(--border); margin: 22px 0; }
+  .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="logo">Lift<span>IQ</span></div>
+    <div class="sub">Your trainer invited you to join.</div>
+
+    <div id="valid" style="display:none">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="step-body">
+          <div class="step-title">Install the app</div>
+          <div class="step-note">Get LiftIQ on your iPhone through TestFlight.</div>
+          <a class="btn" id="installBtn" href="#" style="margin-top:10px">Install LiftIQ</a>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="step-body">
+          <div class="step-title">Enter your invite code</div>
+          <div class="step-note">Open LiftIQ, tap <strong>Sign up</strong>, then
+            <strong>“Joining as a client? Enter your invite link”</strong> and paste this:</div>
+          <div class="code-box">
+            <div class="code" id="code"></div>
+            <button class="copy" id="copyBtn">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+      <a class="btn secondary" id="openBtn" href="#">Already installed? Open in LiftIQ</a>
+    </div>
+
+    <div id="invalid" class="error" style="display:none">
+      This invite link isn’t valid or is missing its code.<br>
+      Ask your trainer to send you a fresh invite link.
+    </div>
+
+    <div class="footer">LiftIQ · workout tracking for trainers &amp; clients</div>
+  </div>
+
+  <script>
+    // ── Set this to your public TestFlight link once Apple approves external testing:
+    //    App Store Connect → TestFlight → External Testing → your group → Enable Public Link
+    var TESTFLIGHT_URL = "https://testflight.apple.com/join/PLACEHOLDER";
+
+    // The invite token is passed as ?t=<token>.
+    var params = new URLSearchParams(window.location.search);
+    var token = (params.get("t") || "").trim();
+
+    if (/^[A-Za-z0-9_-]{16,64}$/.test(token)) {
+      document.getElementById("valid").style.display = "block";
+      document.getElementById("installBtn").href = TESTFLIGHT_URL;
+      document.getElementById("code").textContent = token;
+      document.getElementById("openBtn").href = "liftiq://invite/" + token;
+      document.getElementById("copyBtn").addEventListener("click", function () {
+        navigator.clipboard.writeText(token).then(function () {
+          var b = document.getElementById("copyBtn");
+          b.textContent = "Copied!";
+          setTimeout(function () { b.textContent = "Copy"; }, 1500);
+        });
+      });
+    } else {
+      document.getElementById("invalid").style.display = "block";
+    }
+  </script>
+</body>
+</html>

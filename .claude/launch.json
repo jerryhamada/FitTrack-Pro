@@ -6,6 +6,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-lc", "cd mobile && npx expo start --web"],
       "port": 8081
+    },
+    {
+      "name": "docs-static",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd docs && python3 -m http.server 4599"],
+      "port": 4599
     }
   ]
 }

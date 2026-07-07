@@ -17,8 +17,11 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 export function parseInviteToken(input: string): string | null {
   const raw = input.trim();
   if (TOKEN_RE.test(raw)) return raw;
-  // Any URL shape that contains an invite/<token> path segment, including
-  // Expo Go dev URLs (exp://host/--/invite/<token>).
+  // Landing-page URL: .../invite.html?t=<token> (what the shared link looks like).
+  const query = raw.match(/[?&]t=([A-Za-z0-9_-]+)/);
+  if (query && TOKEN_RE.test(query[1])) return query[1];
+  // Any URL with an invite/<token> path segment: the liftiq://invite/<token>
+  // deep link and Expo Go dev URLs (exp://host/--/invite/<token>).
   const match = raw.match(/invite\/([A-Za-z0-9_-]+)/);
   if (match && TOKEN_RE.test(match[1])) return match[1];
   return null;

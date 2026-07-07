@@ -108,7 +108,10 @@ class InviteOut(BaseModel):
             token=invite.token,
             status=invite.status,
             expires_at=invite.expires_at,
-            invite_link=f"https://app.fittrackpro.com/invite/{invite.token}",
+            # Landing page (GitHub Pages) that walks the client through installing
+            # the app and entering this invite code. The ?t= token is what the
+            # signup screen redeems. See docs/invite.html.
+            invite_link=f"https://jerryhamada.github.io/FitTrack-Pro/invite.html?t={invite.token}",
         )
 
 
