@@ -35,7 +35,7 @@ const FREQUENCY_OPTIONS = [1, 2, 3, 4, 5, 6, 7] as const;
 
 const schema = z.object({
   name: z.string().min(1, "Name is required"),
-  phone: z.string().optional(),
+  email: z.string().min(1, "Email is required").email("Enter a valid email"),
   goals: z.string().optional(),
   goal_type: z.enum(["strength", "hypertrophy", "fat_loss", "endurance", "general_fitness"]).optional(),
   training_frequency_target: z.number().int().min(1).max(7).optional(),
@@ -111,9 +111,18 @@ export default function AddClientScreen() {
       />
       <Controller
         control={control}
-        name="phone"
+        name="email"
         render={({ field: { onChange, value } }) => (
-          <Input label="Phone (optional)" value={value ?? ""} onChangeText={onChange} placeholder="(555) 555-5555" keyboardType="phone-pad" />
+          <Input
+            label="Email"
+            value={value ?? ""}
+            onChangeText={onChange}
+            placeholder="ava@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            error={errors.email?.message}
+          />
         )}
       />
       <Controller

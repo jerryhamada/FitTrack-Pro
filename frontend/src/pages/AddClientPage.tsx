@@ -10,7 +10,6 @@ import type { ClientCreateResponse } from "../types";
 const schema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Enter a valid email"),
-  phone: z.string().optional(),
   goals: z.string().optional(),
   starting_bodyweight: z.coerce.number().optional().or(z.literal("")),
   starting_body_fat_pct: z.coerce.number().optional().or(z.literal("")),
@@ -84,9 +83,6 @@ export default function AddClientPage() {
         </Field>
         <Field label="Email" error={errors.email?.message}>
           <input className="input-ctrl" type="email" {...register("email")} placeholder="ava@example.com" />
-        </Field>
-        <Field label="Phone (optional)">
-          <input className="input-ctrl" {...register("phone")} placeholder="(555) 555-5555" />
         </Field>
         <Field label="Goals (optional)">
           <textarea className="input-ctrl !h-24 resize-none py-3" {...register("goals")} placeholder="Build strength, lose 10lbs..." />

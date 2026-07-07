@@ -2,7 +2,7 @@ import { useSignUp } from "@clerk/clerk-expo";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -44,6 +44,16 @@ export default function SignUpScreen() {
     retry: false,
     staleTime: Infinity,
   });
+
+  // Prefill + lock the email from the invite so the client signs up with the
+  // address their trainer used to invite them. Locked only while the token is
+  // valid and carried an email; otherwise the field stays editable.
+  const lockedEmail = inviteToken !== null && !inviteError ? invitePreview?.client_email ?? null : null;
+  const emailLocked = lockedEmail !== null;
+
+  useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail);
+  }, [lockedEmail]);
 
   function handleInviteSubmit() {
     const parsed = parseInviteToken(inviteInput);
@@ -135,7 +145,14 @@ export default function SignUpScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                editable={!emailLocked}
+                style={emailLocked ? styles.lockedInput : undefined}
               />
+              {emailLocked && (
+                <Text style={styles.lockedHint}>
+                  Your trainer invited this email — sign up with it to link your account.
+                </Text>
+              )}
               <Input
                 label="Password"
                 value={password}
@@ -247,4 +264,6 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   inviteEntry: { gap: spacing.sm },
+  lockedInput: { color: colors.muted, opacity: 0.8 },
+  lockedHint: { fontSize: font.xs, color: colors.muted, marginTop: -spacing.xs },
 });

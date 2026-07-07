@@ -298,7 +298,9 @@ export const api = {
       req<BodyweightLog>(`/client-portal/bodyweight${qs({ client_id: clientId })}`, jsonBody("POST", { weight })),
     redeemInvite: (token: string): Promise<{ client_id: number; client_name: string; trainer_name: string | null }> =>
       req(`/client-portal/redeem-invite`, jsonBody("POST", { token })),
-    invitePreview: (token: string): Promise<{ client_name: string; trainer_name: string | null }> =>
+    invitePreview: (
+      token: string
+    ): Promise<{ client_name: string; client_email: string | null; trainer_name: string | null }> =>
       req(`/client-portal/invites/${encodeURIComponent(token)}`),
   },
 

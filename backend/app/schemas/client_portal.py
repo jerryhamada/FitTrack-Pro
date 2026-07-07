@@ -18,9 +18,12 @@ class InviteRedeemResponse(BaseModel):
 
 
 class InvitePreviewOut(BaseModel):
-    """Pre-signup peek at a valid invite so the app can show who it's for."""
+    """Pre-signup peek at a valid invite so the app can show who it's for and
+    prefill the signup email. client_email may be None for clients created
+    before email was required."""
 
     client_name: str
+    client_email: str | None
     trainer_name: str | None
 
 

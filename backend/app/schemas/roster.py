@@ -13,8 +13,10 @@ NoteCategory = Literal["technique", "injury", "mobility", "nutrition", "homework
 
 class ClientCreate(BaseModel):
     name: str
-    email: EmailStr | None = None
-    phone: str | None = None
+    # Required: the client is invited by email, and it's stored on their account
+    # so the invite is tied to a real address (the invite token still authorizes
+    # signup regardless of which email they ultimately register with Clerk).
+    email: EmailStr
     goals: str | None = None
     goal_type: GoalType | None = None
     training_frequency_target: int | None = Field(default=None, ge=1, le=7)

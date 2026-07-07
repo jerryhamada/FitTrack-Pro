@@ -118,6 +118,7 @@ def preview_invite(token: str, db: Session = Depends(get_db)):
     trainer = db.query(User).filter(User.id == invite.client.trainer_id).first()
     return InvitePreviewOut(
         client_name=invite.client.name,
+        client_email=invite.client.email,
         trainer_name=trainer.name if trainer else None,
     )
 

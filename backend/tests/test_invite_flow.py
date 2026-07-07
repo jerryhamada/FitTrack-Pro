@@ -188,7 +188,11 @@ def test_whoami_unknown_login_has_no_role(as_login):
 def test_preview_valid_invite(raw_api, invite, client_row, trainer):
     resp = raw_api.get(f"/client-portal/invites/{invite.token}")
     assert resp.status_code == 200
-    assert resp.json() == {"client_name": client_row.name, "trainer_name": trainer.name}
+    assert resp.json() == {
+        "client_name": client_row.name,
+        "client_email": client_row.email,
+        "trainer_name": trainer.name,
+    }
 
 
 def test_preview_unknown_token_404(raw_api):
