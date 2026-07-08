@@ -30,6 +30,12 @@ class InviteStatusEnum(str, enum.Enum):
     revoked = "revoked"
 
 
+class LinkRequestStatusEnum(str, enum.Enum):
+    pending = "pending"
+    accepted = "accepted"
+    declined = "declined"
+
+
 class DeliveryMethodEnum(str, enum.Enum):
     email = "email"
     sms = "sms"
@@ -77,3 +83,4 @@ class NotificationTypeEnum(str, enum.Enum):
     new_pr = "new_pr"
     session_reminder = "session_reminder"
     missed_workout = "missed_workout"
+    client_link_request = "client_link_request"

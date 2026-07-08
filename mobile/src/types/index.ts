@@ -468,7 +468,8 @@ export type NotificationType =
   | "client_inactive"
   | "new_pr"
   | "session_reminder"
-  | "missed_workout";
+  | "missed_workout"
+  | "client_link_request";
 
 export interface Notification {
   id: number;
@@ -684,4 +685,21 @@ export interface WhoAmI {
   role: "trainer" | "client" | null;
   client_id: number | null;
   client_name: string | null;
+  // Client accounts only: null for trainers/unprovisioned logins.
+  trainer_link_status: "none" | "pending" | "linked" | null;
+}
+
+export interface TrainerSearchResult {
+  trainer_id: number;
+  name: string;
+  business_name: string | null;
+  logo_url: string | null;
+}
+
+export interface LinkRequest {
+  id: number;
+  trainer_id: number;
+  trainer_name: string | null;
+  status: string;
+  created_at: string;
 }

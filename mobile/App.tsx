@@ -7,6 +7,7 @@ import { Alert, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PendingInviteProvider } from "./src/contexts/PendingInvite";
 import { RoleOverrideProvider } from "./src/contexts/RoleOverride";
+import { SignupRoleProvider } from "./src/contexts/SignupRole";
 import { setTokenGetter, ApiError } from "./src/lib/api";
 import RootNavigator from "./src/navigation";
 import { colors } from "./src/theme";
@@ -58,11 +59,13 @@ export default function App() {
           <SafeAreaProvider>
             <RoleOverrideProvider>
               <PendingInviteProvider>
+              <SignupRoleProvider>
                 <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
                 <NavigationContainer theme={NAV_THEME}>
                   <AuthSync />
                   <RootNavigator />
                 </NavigationContainer>
+              </SignupRoleProvider>
               </PendingInviteProvider>
             </RoleOverrideProvider>
           </SafeAreaProvider>

@@ -122,3 +122,14 @@ class InviteOut(BaseModel):
 class ClientCreateResponse(BaseModel):
     client: ClientOut
     invite: InviteOut
+
+
+class TrainerLinkRequestOut(BaseModel):
+    """A client's request to connect, as the trainer sees it."""
+
+    id: int
+    client_id: int
+    client_name: str
+    client_email: str | None
+    status: str
+    created_at: datetime

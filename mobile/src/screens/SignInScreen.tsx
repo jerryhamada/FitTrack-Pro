@@ -83,7 +83,7 @@ export default function SignInScreen() {
           />
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate("SignUp")} style={styles.switchBtn}>
+        <TouchableOpacity onPress={() => navigation.navigate("RoleSelect")} style={styles.switchBtn}>
           <Text style={styles.switchText}>
             Don't have an account?{" "}
             <Text style={styles.switchLink}>Sign up</Text>

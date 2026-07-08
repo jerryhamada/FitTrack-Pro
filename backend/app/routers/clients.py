@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_trainer
 from ..database import get_db
 from ..models.activity import ActivityEvent
-from ..models.enums import ActivityEventTypeEnum, ClientStatusEnum
+from ..models.enums import ActivityEventTypeEnum, ClientStatusEnum, LinkRequestStatusEnum
 from ..models.exercises import Exercise
 from ..models.identity import User
 from ..models.programs import ClientProgram
 from ..models.prs import PR
-from ..models.roster import Client, ClientNote, Invite
+from ..models.roster import Client, ClientNote, Invite, TrainerLinkRequest
 from ..models.sessions import WorkoutSession
 from ..schemas.roster import (
     ClientCreate,
@@ -26,6 +26,7 @@ from ..schemas.roster import (
     ClientPulseOut,
     ClientUpdate,
     InviteOut,
+    TrainerLinkRequestOut,
 )
 from ..services.invites import create_invite, send_invite
 
@@ -192,6 +193,114 @@ def create_client(
     db.refresh(client)
     db.refresh(invite)
     return ClientCreateResponse(client=ClientOut.model_validate(client), invite=InviteOut.from_invite(invite))
+
+
+# NOTE: these fixed paths must stay declared before the /{client_id} routes —
+# FastAPI matches in declaration order and "link-requests" would otherwise 422
+# against the int converter.
+@router.get("/link-requests", response_model=list[TrainerLinkRequestOut])
+def list_link_requests(
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Pending connect requests from self-signed-up clients, newest first."""
+    rows = (
+        db.query(TrainerLinkRequest, Client)
+        .join(Client, Client.id == TrainerLinkRequest.client_id)
+        .filter(
+            TrainerLinkRequest.trainer_id == trainer.id,
+            TrainerLinkRequest.status == LinkRequestStatusEnum.pending,
+        )
+        .order_by(TrainerLinkRequest.created_at.desc())
+        .all()
+    )
+    return [
+        TrainerLinkRequestOut(
+            id=r.id,
+            client_id=c.id,
+            client_name=c.name,
+            client_email=c.email,
+            status=r.status.value,
+            created_at=r.created_at,
+        )
+        for r, c in rows
+    ]
+
+
+def _get_pending_link_request(db: Session, trainer_id: int, request_id: int) -> TrainerLinkRequest:
+    req = (
+        db.query(TrainerLinkRequest)
+        .filter(TrainerLinkRequest.id == request_id, TrainerLinkRequest.trainer_id == trainer_id)
+        .first()
+    )
+    if req is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req.status != LinkRequestStatusEnum.pending:
+        raise HTTPException(status_code=409, detail="This request has already been handled.")
+    return req
+
+
+@router.post("/link-requests/{request_id}/accept", response_model=TrainerLinkRequestOut)
+def accept_link_request(
+    request_id: int,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    """Accept a client's connect request: attaches their self-created Client row
+    to this trainer's roster."""
+    req = _get_pending_link_request(db, trainer.id, request_id)
+    client = db.query(Client).filter(Client.id == req.client_id).first()
+    if client is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    if client.trainer_id is not None:
+        req.status = LinkRequestStatusEnum.declined
+        req.responded_at = datetime.now(timezone.utc)
+        db.commit()
+        raise HTTPException(status_code=409, detail="This client is already linked to a trainer.")
+
+    client.trainer_id = trainer.id
+    req.status = LinkRequestStatusEnum.accepted
+    req.responded_at = datetime.now(timezone.utc)
+    db.add(
+        ActivityEvent(
+            trainer_id=trainer.id,
+            client_id=client.id,
+            event_type=ActivityEventTypeEnum.client_added,
+            payload={"client_name": client.name, "via": "link_request"},
+        )
+    )
+    db.commit()
+    db.refresh(req)
+    return TrainerLinkRequestOut(
+        id=req.id,
+        client_id=client.id,
+        client_name=client.name,
+        client_email=client.email,
+        status=req.status.value,
+        created_at=req.created_at,
+    )
+
+
+@router.post("/link-requests/{request_id}/decline", response_model=TrainerLinkRequestOut)
+def decline_link_request(
+    request_id: int,
+    trainer: User = Depends(get_current_trainer),
+    db: Session = Depends(get_db),
+):
+    req = _get_pending_link_request(db, trainer.id, request_id)
+    req.status = LinkRequestStatusEnum.declined
+    req.responded_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(req)
+    client = db.query(Client).filter(Client.id == req.client_id).first()
+    return TrainerLinkRequestOut(
+        id=req.id,
+        client_id=req.client_id,
+        client_name=client.name if client else "Client",
+        client_email=client.email if client else None,
+        status=req.status.value,
+        created_at=req.created_at,
+    )
 
 
 def _get_client_or_404(db: Session, trainer_id: int, client_id: int) -> Client:

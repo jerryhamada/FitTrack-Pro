@@ -24,8 +24,11 @@ import SessionSummaryScreen from "../screens/SessionSummaryScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import SignInScreen from "../screens/SignInScreen";
 import SignUpScreen from "../screens/SignUpScreen";
+import RoleSelectScreen from "../screens/RoleSelectScreen";
+import FindTrainerScreen from "../screens/FindTrainerScreen";
 import ClientPreviewScreen from "../screens/ClientPreviewScreen";
 import { usePendingInvite } from "../contexts/PendingInvite";
+import { useSignupRole } from "../contexts/SignupRole";
 import { useRoleOverride } from "../contexts/RoleOverride";
 import { api } from "../lib/api";
 import ClientTabs from "./ClientTabs";
@@ -208,6 +211,7 @@ function AuthNavigator() {
   return (
     <AuthStack.Navigator screenOptions={{ ...stackHeaderStyle, headerShown: false }}>
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
+      <AuthStack.Screen name="RoleSelect" component={RoleSelectScreen} />
       <AuthStack.Screen name="SignUp" component={SignUpScreen} />
     </AuthStack.Navigator>
   );
@@ -276,9 +280,14 @@ function FullScreenStatus({ children }: { children: React.ReactNode }) {
  * first (that's what links the login to the trainer's Client row and makes it
  * a client account), then route by the backend's role resolution: clients get
  * the client portal tabs, everyone else gets the trainer app.
+ *
+ * A login that picked "I'm a Client" at signup (no invite) gets provisioned as
+ * a standalone client account here, then runs the Find Your Trainer step
+ * before landing on the client dashboard.
  */
 function SignedInRouter() {
   const { token, clearToken } = usePendingInvite();
+  const { role: signupRole, clearRole } = useSignupRole();
   const { signOut } = useAuth();
   const qc = useQueryClient();
 
@@ -302,6 +311,21 @@ function SignedInRouter() {
   useEffect(() => {
     if (token !== null && redeemStatus === "idle") redeemMutate();
   }, [token, redeemStatus, redeemMutate]);
+
+  // "I'm a Client" signup without an invite: provision the standalone client
+  // account, then re-resolve the role.
+  const registerClient = useMutation({
+    mutationFn: api.auth.registerClient,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["whoami"] }),
+    meta: { skipGlobalToast: true },
+  });
+  const { mutate: registerMutate, status: registerStatus } = registerClient;
+  const needsClientProvisioning =
+    token === null && signupRole === "client" && whoami.data !== undefined && whoami.data.role === null;
+
+  useEffect(() => {
+    if (needsClientProvisioning && registerStatus === "idle") registerMutate();
+  }, [needsClientProvisioning, registerStatus, registerMutate]);
 
   if (token !== null) {
     if (redeem.isError) {
@@ -351,9 +375,41 @@ function SignedInRouter() {
     );
   }
 
+  if (needsClientProvisioning) {
+    if (registerClient.isError) {
+      return (
+        <FullScreenStatus>
+          <Text style={styles.statusTitle}>Couldn't set up your client account</Text>
+          <Text style={styles.statusMessage}>{(registerClient.error as Error).message}</Text>
+          <TouchableOpacity style={styles.statusBtn} onPress={() => registerClient.reset()}>
+            <Text style={styles.statusBtnText}>Try again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => signOut()}>
+            <Text style={styles.statusLink}>Sign out</Text>
+          </TouchableOpacity>
+        </FullScreenStatus>
+      );
+    }
+    return (
+      <FullScreenStatus>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.statusMessage}>Setting up your account...</Text>
+      </FullScreenStatus>
+    );
+  }
+
+  if (whoami.data.role === "client") {
+    // Fresh client signup with no trainer yet → Find Your Trainer, with a
+    // persistent skip. Sending a request or skipping both land on the dashboard.
+    if (signupRole === "client" && whoami.data.trainer_link_status === "none") {
+      return <FindTrainerScreen onDone={clearRole} />;
+    }
+    return <ClientTabs includeAccount />;
+  }
+
   // role "trainer" → trainer app; role null → brand-new trainer signup (the
   // backend auto-provisions the trainer account on first trainer API call).
-  return whoami.data.role === "client" ? <ClientTabs includeAccount /> : <AppNavigator />;
+  return <AppNavigator />;
 }
 
 export default function RootNavigator() {

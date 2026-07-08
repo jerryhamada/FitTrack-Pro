@@ -27,6 +27,27 @@ class InvitePreviewOut(BaseModel):
     trainer_name: str | None
 
 
+class TrainerSearchResult(BaseModel):
+    """One row of the client-facing 'Find your trainer' search."""
+
+    trainer_id: int
+    name: str
+    business_name: str | None
+    logo_url: str | None
+
+
+class LinkRequestCreate(BaseModel):
+    trainer_id: int
+
+
+class LinkRequestOut(BaseModel):
+    id: int
+    trainer_id: int
+    trainer_name: str | None
+    status: str
+    created_at: datetime
+
+
 class PortalNextSession(BaseModel):
     scheduled_at: datetime
     trainer_name: str | None

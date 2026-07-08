@@ -34,10 +34,12 @@ import type {
   ProgramSummary,
   ProgressResponse,
   RecentPR,
+  LinkRequest,
   SessionListItem,
   SessionSummary,
   SetEntry,
   Trainer,
+  TrainerSearchResult,
   TrainerProfile,
   WhoAmI,
   VolumeByCategoryResponse,
@@ -305,10 +307,16 @@ export const api = {
       token: string
     ): Promise<{ client_name: string; client_email: string | null; trainer_name: string | null }> =>
       req(`/client-portal/invites/${encodeURIComponent(token)}`),
+    trainerSearch: (q: string): Promise<TrainerSearchResult[]> =>
+      req<TrainerSearchResult[]>(`/client-portal/trainer-search${qs({ q })}`),
+    requestLink: (trainerId: number): Promise<LinkRequest> =>
+      req<LinkRequest>("/client-portal/link-requests", jsonBody("POST", { trainer_id: trainerId })),
   },
 
   auth: {
     whoami: (): Promise<WhoAmI> => req<WhoAmI>("/auth/whoami"),
+    registerClient: (): Promise<{ client_id: number; client_name: string }> =>
+      req("/auth/register-client", { method: "POST" }),
   },
 
   notifications: {

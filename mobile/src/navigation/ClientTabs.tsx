@@ -2,11 +2,13 @@ import { useClerk } from "@clerk/clerk-expo";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Alert, Modal, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Btn from "../components/Btn";
 import { api } from "../lib/api";
 import { colors, font, radius, spacing } from "../theme";
+import FindTrainerScreen from "../screens/FindTrainerScreen";
 import ClientDashboardScreen from "../screens/ClientDashboardScreen";
 import ClientHistoryScreen from "../screens/ClientHistoryScreen";
 import ClientMyWorkoutsScreen from "../screens/ClientMyWorkoutsScreen";
@@ -32,10 +34,14 @@ function ClientTabIcon({ name, focused }: { name: string; focused: boolean }) {
   );
 }
 
-/** Minimal account screen for logged-in clients: who they are + sign out. */
+/** Minimal account screen for logged-in clients: who they are, trainer link
+ * status ("link later in Settings" lives here), and sign out. */
 function ClientAccountScreen() {
   const { signOut } = useClerk();
   const { data: me } = useQuery({ queryKey: ["whoami"], queryFn: api.auth.whoami });
+  const [findTrainerOpen, setFindTrainerOpen] = useState(false);
+
+  const linkStatus = me?.trainer_link_status ?? null;
 
   return (
     <View style={styles.accountContainer}>
@@ -43,6 +49,25 @@ function ClientAccountScreen() {
         <Text style={styles.accountName}>{me?.client_name ?? "Your account"}</Text>
         <Text style={styles.accountHint}>Client account</Text>
       </View>
+
+      {linkStatus === "pending" && (
+        <View style={styles.linkCard}>
+          <Text style={styles.linkTitle}>Trainer request pending</Text>
+          <Text style={styles.linkText}>
+            Your connect request has been sent — your trainer just needs to accept it.
+          </Text>
+        </View>
+      )}
+      {linkStatus === "none" && (
+        <View style={styles.linkCard}>
+          <Text style={styles.linkTitle}>No trainer linked</Text>
+          <Text style={styles.linkText}>
+            Training with someone? Connect your account so they can program your workouts.
+          </Text>
+          <Btn label="Find your trainer" fullWidth onPress={() => setFindTrainerOpen(true)} />
+        </View>
+      )}
+
       <Btn
         label="Sign out"
         variant="danger"
@@ -54,6 +79,15 @@ function ClientAccountScreen() {
           ])
         }
       />
+
+      <Modal
+        visible={findTrainerOpen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setFindTrainerOpen(false)}
+      >
+        <FindTrainerScreen onDone={() => setFindTrainerOpen(false)} />
+      </Modal>
     </View>
   );
 }
@@ -106,4 +140,14 @@ const styles = StyleSheet.create({
   },
   accountName: { fontSize: font.lg, fontWeight: "700", color: colors.white },
   accountHint: { fontSize: font.sm, color: colors.muted },
+  linkCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  linkTitle: { fontSize: font.base, fontWeight: "600", color: colors.white },
+  linkText: { fontSize: font.sm, color: colors.muted, lineHeight: 20 },
 });

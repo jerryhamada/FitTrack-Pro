@@ -43,3 +43,12 @@ class WhoAmIOut(BaseModel):
     role: Literal["trainer", "client"] | None
     client_id: int | None = None
     client_name: str | None = None
+    # Client accounts only: whether they're connected to a trainer yet.
+    # "linked" = has a trainer; "pending" = sent a connect request awaiting the
+    # trainer's response; "none" = training solo (can link later in Settings).
+    trainer_link_status: Literal["none", "pending", "linked"] | None = None
+
+
+class RegisterClientOut(BaseModel):
+    client_id: int
+    client_name: str

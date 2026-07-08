@@ -11,12 +11,21 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import _verify_token, get_clerk_payload
 from ..config import get_settings
 from ..database import get_db
-from ..models.enums import ClientStatusEnum, InviteStatusEnum, PrTypeEnum, RoleEnum, ScheduledStatusEnum
+from ..models.enums import (
+    ClientStatusEnum,
+    InviteStatusEnum,
+    LinkRequestStatusEnum,
+    NotificationTypeEnum,
+    PrTypeEnum,
+    RoleEnum,
+    ScheduledStatusEnum,
+)
 from ..models.exercises import Exercise
 from ..models.identity import TrainerProfile, User
+from ..models.notifications import Notification
 from ..models.programs import ClientProgram, ClientProgramDay, ClientProgramExercise, Program
 from ..models.prs import PR
-from ..models.roster import BodyweightLog, Client, Invite
+from ..models.roster import BodyweightLog, Client, Invite, TrainerLinkRequest
 from ..models.schedule import ScheduledSession
 from ..models.sessions import SetEntry, WorkoutSession
 from ..schemas.client_portal import (
@@ -31,6 +40,8 @@ from ..schemas.client_portal import (
     InvitePreviewOut,
     InviteRedeemRequest,
     InviteRedeemResponse,
+    LinkRequestCreate,
+    LinkRequestOut,
     PortalCurrentProgram,
     PortalExerciseRef,
     PortalHistoryItem,
@@ -50,6 +61,7 @@ from ..schemas.client_portal import (
     StrengthSeries,
     StrengthWidget,
     StrengthWidgetOption,
+    TrainerSearchResult,
 )
 from ..services.invites import InviteError, InviteExpiredError, validate_invite_for_redemption
 from ..services.one_rm import set_e1rm_lbs
@@ -218,6 +230,103 @@ def redeem_invite(
         client_id=client.id,
         client_name=client.name,
         trainer_name=trainer.name if trainer else None,
+    )
+
+
+@router.get("/trainer-search", response_model=list[TrainerSearchResult])
+def trainer_search(
+    q: str = Query(..., min_length=2, max_length=100),
+    payload: dict = Depends(get_clerk_payload),
+    db: Session = Depends(get_db),
+):
+    """Name/business search over trainer accounts for the client 'Find your
+    trainer' flow. Requires a verified login (any role) but is deliberately
+    minimal — name, business, logo — since it's shown to strangers."""
+    pattern = f"%{q.strip()}%"
+    rows = (
+        db.query(User, TrainerProfile)
+        .outerjoin(TrainerProfile, TrainerProfile.user_id == User.id)
+        .filter(
+            User.role == RoleEnum.trainer,
+            (User.name.ilike(pattern)) | (TrainerProfile.business_name.ilike(pattern)),
+        )
+        .order_by(User.name)
+        .limit(20)
+        .all()
+    )
+    return [
+        TrainerSearchResult(
+            trainer_id=u.id,
+            name=u.name or "Trainer",
+            business_name=p.business_name if p else None,
+            logo_url=p.logo_url if p else None,
+        )
+        for u, p in rows
+    ]
+
+
+@router.post("/link-requests", response_model=LinkRequestOut, status_code=201)
+def create_link_request(
+    body: LinkRequestCreate,
+    client: Client = Depends(get_current_client),
+    db: Session = Depends(get_db),
+):
+    """Client asks to connect to a trainer. One pending request at a time; the
+    trainer sees it as a notification and accepts/declines from their roster.
+    Re-requesting the same trainer while pending is idempotent."""
+    if client.trainer_id is not None:
+        raise HTTPException(status_code=409, detail="You're already connected to a trainer.")
+
+    trainer = (
+        db.query(User)
+        .filter(User.id == body.trainer_id, User.role == RoleEnum.trainer)
+        .first()
+    )
+    if trainer is None:
+        raise HTTPException(status_code=404, detail="Trainer not found")
+
+    pending = (
+        db.query(TrainerLinkRequest)
+        .filter(
+            TrainerLinkRequest.client_id == client.id,
+            TrainerLinkRequest.status == LinkRequestStatusEnum.pending,
+        )
+        .first()
+    )
+    if pending is not None:
+        if pending.trainer_id == trainer.id:
+            return LinkRequestOut(
+                id=pending.id,
+                trainer_id=trainer.id,
+                trainer_name=trainer.name,
+                status=pending.status.value,
+                created_at=pending.created_at,
+            )
+        raise HTTPException(
+            status_code=409,
+            detail="You already have a pending request to another trainer.",
+        )
+
+    req = TrainerLinkRequest(client_id=client.id, trainer_id=trainer.id)
+    db.add(req)
+    db.flush()
+    db.add(
+        Notification(
+            trainer_id=trainer.id,
+            type=NotificationTypeEnum.client_link_request,
+            client_id=client.id,
+            message=f"{client.name} wants to connect with you as a client.",
+            dedup_key=f"link_request:{req.id}",
+        )
+    )
+    db.commit()
+    db.refresh(req)
+    return LinkRequestOut(
+        id=req.id,
+        trainer_id=trainer.id,
+        trainer_name=trainer.name,
+        status=req.status.value,
+        created_at=req.created_at,
     )
 
 

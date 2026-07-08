@@ -19,6 +19,7 @@ const TYPE_META: Record<NotificationType, { icon: string; color: string }> = {
   missed_workout: { icon: "❌", color: colors.danger },
   new_pr: { icon: "🏆", color: "#eab308" },
   session_reminder: { icon: "📅", color: "#3b82f6" },
+  client_link_request: { icon: "🤝", color: colors.accent },
 };
 
 function relativeTime(iso: string, now: number): string {

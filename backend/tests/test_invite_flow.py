@@ -161,7 +161,12 @@ def test_redeem_with_trainer_login_409(db, as_login, invite, trainer):
 def test_whoami_trainer(as_login, trainer):
     resp = as_login({"sub": trainer.clerk_user_id}).get("/auth/whoami")
     assert resp.status_code == 200
-    assert resp.json() == {"role": "trainer", "client_id": None, "client_name": None}
+    assert resp.json() == {
+        "role": "trainer",
+        "client_id": None,
+        "client_name": None,
+        "trainer_link_status": None,
+    }
 
 
 def test_whoami_client_after_redeem(db, as_login, invite, client_row):
@@ -173,6 +178,7 @@ def test_whoami_client_after_redeem(db, as_login, invite, client_row):
         "role": "client",
         "client_id": client_row.id,
         "client_name": client_row.name,
+        "trainer_link_status": "linked",
     }
 
 

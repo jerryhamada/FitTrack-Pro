@@ -2,7 +2,8 @@ import type { SessionSummary } from "../types";
 
 export type AuthStackParamList = {
   SignIn: undefined;
-  SignUp: undefined;
+  RoleSelect: undefined;
+  SignUp: { role?: "trainer" | "client" } | undefined;
 };
 
 export type RootStackParamList = {

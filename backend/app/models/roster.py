@@ -6,14 +6,15 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, St
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
-from .enums import ClientStatusEnum, DeliveryMethodEnum, InviteStatusEnum, UnitEnum
+from .enums import ClientStatusEnum, DeliveryMethodEnum, InviteStatusEnum, LinkRequestStatusEnum, UnitEnum
 
 
 class Client(Base):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    trainer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # Nullable: a self-signed-up client has no trainer until a link request is accepted.
+    trainer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -77,6 +78,26 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     client: Mapped[Client] = relationship(back_populates="invites")
+
+
+class TrainerLinkRequest(Base):
+    """A client-initiated request to connect to a trainer (the 'Find your trainer'
+    flow — the reverse direction of Invite, which is trainer-initiated)."""
+
+    __tablename__ = "trainer_link_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+    trainer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    status: Mapped[LinkRequestStatusEnum] = mapped_column(
+        Enum(LinkRequestStatusEnum, name="link_request_status_enum"),
+        nullable=False,
+        default=LinkRequestStatusEnum.pending,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    client: Mapped[Client] = relationship()
 
 
 class BodyweightLog(Base):

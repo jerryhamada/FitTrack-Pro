@@ -1,5 +1,5 @@
 import { useSignUp } from "@clerk/clerk-expo";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -16,6 +16,7 @@ import {
 import Btn from "../components/Btn";
 import Input from "../components/Input";
 import { parseInviteToken, usePendingInvite } from "../contexts/PendingInvite";
+import { useSignupRole } from "../contexts/SignupRole";
 import { api } from "../lib/api";
 import { clerkErrorMessage } from "../lib/clerkError";
 import type { AuthStackParamList } from "../navigation/types";
@@ -25,8 +26,13 @@ type Nav = NativeStackNavigationProp<AuthStackParamList>;
 
 export default function SignUpScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<RouteProp<AuthStackParamList, "SignUp">>();
   const { signUp, setActive, isLoaded } = useSignUp();
   const { token: inviteToken, setToken: setInviteToken, clearToken } = usePendingInvite();
+  const { role: chosenRole } = useSignupRole();
+  // An invite always means a client account; otherwise the Role Selection choice
+  // decides (defaulting to trainer for logins that skipped it, e.g. deep links).
+  const role = inviteToken ? "client" : route.params?.role ?? chosenRole ?? "trainer";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -108,7 +114,7 @@ export default function SignUpScreen() {
             FitTrack <Text style={styles.logoAccent}>Pro</Text>
           </Text>
           <Text style={styles.logoSub}>
-            {inviteToken ? "Create your client account" : "Create your trainer account"}
+            {role === "client" ? "Create your client account" : "Create your trainer account"}
           </Text>
         </View>
 
