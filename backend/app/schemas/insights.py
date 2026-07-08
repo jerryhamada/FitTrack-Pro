@@ -52,11 +52,25 @@ class BestSet(BaseModel):
     session_date: date
 
 
+class PeakSet(BaseModel):
+    """The set with the highest est_1rm on record for a client + exercise —
+    by value, not recency. Reported as logged: per-hand weight for per-side
+    dumbbell sets, in the set's own unit."""
+
+    weight: float
+    unit: UnitEnum
+    reps: int
+    is_per_side: bool
+    est_1rm: float  # same unit as `weight`
+
+
 class ExerciseInsight(BaseModel):
     exercise_id: int
     sessions_used: int
     last_used_at: datetime
     last3_best: list[BestSet]  # best set from each of the last 3 sessions with this exercise
+    # Includes sets from in-progress sessions so the Add Set strip updates live.
+    peak_set: PeakSet | None = None
 
 
 class ClientExerciseInsights(BaseModel):

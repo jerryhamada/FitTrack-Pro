@@ -191,6 +191,29 @@ class StrengthSeries(BaseModel):
     points: list[StrengthPoint]
 
 
+class StrengthWidgetOption(BaseModel):
+    exercise_id: int
+    exercise_name: str
+
+
+class StrengthWidget(BaseModel):
+    """Dashboard 'Your Strength Progress' card: compact e1RM trend for one
+    exercise + a plain-language delta. Options are ordered by recency (most
+    recently logged first) — that's also the default selection."""
+
+    unit: UnitEnum
+    exercise_options: list[StrengthWidgetOption]
+    exercise_id: int | None
+    exercise_name: str | None
+    points: list[StrengthPoint]
+    # Peak e1RM vs the value nearest the start of the lookback window, in the
+    # client's preferred unit. Null when there isn't enough history to make a
+    # non-misleading claim (<2 points, or history younger than the window).
+    delta_value: float | None
+    delta_pct: float | None
+    window_days: int = 30
+
+
 class ClientProgressStats(BaseModel):
     streak_weeks: int
     total_workouts: int

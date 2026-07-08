@@ -51,10 +51,18 @@ export default function ClientDashboardScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [progressY, setProgressY] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const [strengthExerciseId, setStrengthExerciseId] = useState<number | null>(null);
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ["client-portal", "dashboard", clientId],
     queryFn: () => api.clientPortal.dashboard(clientId),
+  });
+
+  // "Your Strength Progress" card — e1RM trend for one lift (defaults to the
+  // most recently logged one server-side).
+  const { data: strength } = useQuery({
+    queryKey: ["client-portal", "strength-summary", strengthExerciseId, clientId],
+    queryFn: () => api.clientPortal.strengthSummary(strengthExerciseId ?? undefined, clientId),
   });
 
   // Tick every 30s so the "in Xh Ym" countdown stays honest.
@@ -160,6 +168,73 @@ export default function ClientDashboardScreen() {
               <Text style={styles.heroLabel}>all time</Text>
             </View>
           </View>
+
+          {/* Your Strength Progress — e1RM trend without leaving the dashboard */}
+          {strength && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>💪 Your Strength Progress</Text>
+
+              {strength.exercise_options.length === 0 || strength.points.length < 2 ? (
+                <Text style={styles.mutedText}>
+                  Log a couple of workouts and we'll start tracking your strength gains here. 📈
+                </Text>
+              ) : (
+                <>
+                  {strength.exercise_options.length > 1 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={styles.chipRow}>
+                        {strength.exercise_options.map((o) => (
+                          <TouchableOpacity
+                            key={o.exercise_id}
+                            style={[styles.chip, strength.exercise_id === o.exercise_id && styles.chipActive]}
+                            onPress={() => setStrengthExerciseId(o.exercise_id)}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                strength.exercise_id === o.exercise_id && styles.chipTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {o.exercise_name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  )}
+
+                  <Text style={styles.deltaCallout}>
+                    {strength.delta_value != null
+                      ? `${strength.delta_value >= 0 ? "Up" : "Down"} ${Math.abs(strength.delta_value)} ${strength.unit}${
+                          strength.delta_pct != null ? ` (${Math.abs(strength.delta_pct)}%)` : ""
+                        } over the last month 🔥`
+                      : "Keep logging to see your trend"}
+                  </Text>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() =>
+                      (navigation as { navigate: (name: string, params?: object) => void }).navigate("Progress", {
+                        exerciseId: strength.exercise_id,
+                      })
+                    }
+                  >
+                    <MiniBarChart
+                      data={strength.points.map((p) => ({
+                        label: formatDate(p.date),
+                        value: p.value,
+                        marked: p.is_pr,
+                      }))}
+                      unit={`${strength.unit} e1RM`}
+                      height={80}
+                    />
+                    <Text style={styles.link}>See your full strength chart ›</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
 
           {/* Recent PRs — celebratory */}
           {data.recent_prs.length > 0 && (
@@ -336,6 +411,20 @@ const styles = StyleSheet.create({
   prValue: { color: GOLD, fontSize: font.sm, fontWeight: "700" },
   cardTitle: { color: colors.white, fontSize: font.base, fontWeight: "600" },
   mutedText: { color: colors.muted, fontSize: font.sm },
+  chipRow: { flexDirection: "row", gap: spacing.sm },
+  chip: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    maxWidth: 160,
+  },
+  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { fontSize: font.xs, fontWeight: "600", color: colors.muted },
+  chipTextActive: { color: "#000" },
+  deltaCallout: { color: colors.accent, fontSize: font.base, fontWeight: "700" },
   activityRow: {
     flexDirection: "row",
     alignItems: "center",

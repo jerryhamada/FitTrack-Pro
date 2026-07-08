@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from ..models.enums import DistanceUnitEnum, PrTypeEnum, SetStatusEnum, UnitEnum
 from ..models.prs import PR
 from ..models.sessions import SetEntry, WorkoutSession
-from .one_rm import estimated_1rm
-from .units import to_inches, to_lbs, total_load
+from .one_rm import set_e1rm_lbs as _e1rm_lbs
+from .one_rm import set_est_1rm
+from .units import to_inches, to_lbs
 
 
 def detect_and_record_prs(db: Session, client_id: int, new_set: SetEntry) -> list[PR]:
@@ -19,6 +20,11 @@ def detect_and_record_prs(db: Session, client_id: int, new_set: SetEntry) -> lis
     Two PR types, per the spec: best weight at a given rep count, or best
     estimated 1RM (Epley). A set with no weight (bodyweight/banded) can't PR
     against either metric and is skipped.
+
+    Weight comparisons use the weight AS LOGGED — per-hand for per-side dumbbell
+    sets, NOT doubled — matching the stored est_1rm / PR value and how the set is
+    displayed ("15 lb ea. × 10"). Volume math still doubles; that's a different
+    concept (services/units.total_load).
 
     Height-tracked exercises (box jumps, box-assisted push-ups) get a separate,
     simpler check: best height at a given rep count, with the "best" direction
@@ -34,7 +40,7 @@ def detect_and_record_prs(db: Session, client_id: int, new_set: SetEntry) -> lis
     if new_set.weight is None:
         return []
 
-    new_load_lbs = to_lbs(total_load(new_set.weight, new_set.is_per_side), new_set.weight_unit or UnitEnum.lbs)
+    new_load_lbs = to_lbs(new_set.weight, new_set.weight_unit or UnitEnum.lbs)
     prs: list[PR] = []
 
     prior_sets = (
@@ -50,24 +56,20 @@ def detect_and_record_prs(db: Session, client_id: int, new_set: SetEntry) -> lis
         .all()
     )
 
-    # Weight-at-reps PR: heaviest load ever logged at this exact rep count.
+    # Weight-at-reps PR: heaviest weight-as-logged ever at this exact rep count.
     same_rep_loads = [
-        to_lbs(total_load(s.weight, s.is_per_side), s.weight_unit or UnitEnum.lbs)
+        to_lbs(s.weight, s.weight_unit or UnitEnum.lbs)
         for s in prior_sets
         if s.reps == new_set.reps
     ]
     best_same_rep = max(same_rep_loads, default=None)
     is_weight_pr = best_same_rep is None or new_load_lbs > best_same_rep
 
-    # Estimated 1RM PR: highest Epley-estimated 1RM ever for this exercise.
-    prior_1rms = [
-        estimated_1rm(to_lbs(total_load(s.weight, s.is_per_side), s.weight_unit or UnitEnum.lbs), s.reps)
-        for s in prior_sets
-        if s.reps
-    ]
-    new_1rm = estimated_1rm(new_load_lbs, new_set.reps)
+    # Estimated 1RM PR: highest stored est_1rm ever for this exercise.
+    prior_1rms = [v for v in (_e1rm_lbs(s) for s in prior_sets) if v is not None]
+    new_1rm_lbs = _e1rm_lbs(new_set)
     best_prior_1rm = max(prior_1rms, default=None)
-    is_1rm_pr = best_prior_1rm is None or new_1rm > best_prior_1rm
+    is_1rm_pr = new_1rm_lbs is not None and (best_prior_1rm is None or new_1rm_lbs > best_prior_1rm)
 
     now = datetime.now(timezone.utc)
     unit = new_set.weight_unit or UnitEnum.lbs
@@ -93,7 +95,9 @@ def detect_and_record_prs(db: Session, client_id: int, new_set: SetEntry) -> lis
                 set_id=new_set.id,
                 pr_type=PrTypeEnum.estimated_1rm,
                 reps=new_set.reps,
-                value=new_1rm,
+                # Native-unit estimate (matches `unit` below) — fixes the old
+                # behavior of storing an lbs-derived number against a kg unit.
+                value=new_set.est_1rm if new_set.est_1rm is not None else set_est_1rm(new_set.weight, new_set.reps),
                 unit=unit,
                 achieved_at=now,
             )

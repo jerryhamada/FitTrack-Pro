@@ -23,8 +23,10 @@ from ..schemas.insights import (
     ClientWeeklyStats,
     ExerciseInsight,
     ExercisePRSummary,
+    PeakSet,
     WeeklyStat,
 )
+from ..services.one_rm import set_e1rm_lbs, set_est_1rm
 from ..services.units import from_lbs, to_lbs, total_load
 from ..services.volume import set_volume_lbs
 from .clients import _streak_weeks
@@ -191,6 +193,43 @@ def exercise_insights(
         if current is None or _set_sort_key(st) > _set_sort_key(current[1]):
             by_exercise[st.exercise_id][session_id] = (started_at, st)
 
+    # Peak Set per exercise: the completed set with the highest est_1rm on record —
+    # by value, not recency. Unlike last3 above this deliberately INCLUDES sets from
+    # in-progress sessions, so the Add Set strip updates live as sets are logged.
+    peak_rows = (
+        db.query(SetEntry, WorkoutSession.started_at)
+        .join(WorkoutSession, WorkoutSession.id == SetEntry.session_id)
+        .filter(
+            WorkoutSession.client_id == client_id,
+            SetEntry.status == SetStatusEnum.completed,
+            SetEntry.weight.isnot(None),
+            SetEntry.reps.isnot(None),
+        )
+        .all()
+    )
+    peak_by_exercise: dict[int, tuple[float, datetime, SetEntry]] = {}
+    for st, started_at in peak_rows:
+        e1_lbs = set_e1rm_lbs(st)
+        if e1_lbs is None:
+            continue
+        current_peak = peak_by_exercise.get(st.exercise_id)
+        if current_peak is None or e1_lbs > current_peak[0]:
+            peak_by_exercise[st.exercise_id] = (e1_lbs, started_at, st)
+
+    def _peak_out(exercise_id: int) -> PeakSet | None:
+        peak = peak_by_exercise.get(exercise_id)
+        if peak is None:
+            return None
+        st = peak[2]
+        native_e1rm = st.est_1rm if st.est_1rm is not None else set_est_1rm(st.weight, st.reps)
+        return PeakSet(
+            weight=float(st.weight),
+            unit=st.weight_unit or UnitEnum.lbs,
+            reps=st.reps,
+            is_per_side=st.is_per_side,
+            est_1rm=round(float(native_e1rm), 1),
+        )
+
     out = []
     for exercise_id, sessions in by_exercise.items():
         ordered = sorted(sessions.values(), key=lambda pair: pair[0], reverse=True)
@@ -210,8 +249,22 @@ def exercise_insights(
                 sessions_used=len(sessions),
                 last_used_at=ordered[0][0],
                 last3_best=best_sets,
+                peak_set=_peak_out(exercise_id),
             )
         )
+    # Exercises seen only in an in-progress session (first time being logged) still
+    # need their live peak on the strip — emit a history-less row for them.
+    for exercise_id, (_, started_at, _st) in peak_by_exercise.items():
+        if exercise_id not in by_exercise:
+            out.append(
+                ExerciseInsight(
+                    exercise_id=exercise_id,
+                    sessions_used=0,
+                    last_used_at=started_at,
+                    last3_best=[],
+                    peak_set=_peak_out(exercise_id),
+                )
+            )
     out.sort(key=lambda e: e.last_used_at, reverse=True)
     return ClientExerciseInsights(unit=unit, exercises=out)
 

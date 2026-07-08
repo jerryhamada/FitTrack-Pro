@@ -197,6 +197,8 @@ export interface SetEntry {
   height_unit: DistanceUnit | null;
   is_per_side: boolean;
   reps: number | null;
+  /** Stored Epley estimate in this set's weight_unit (per-hand for per-side sets). */
+  est_1rm: number | null;
   effort_value: number | null;
   effort_type: EffortType | null;
   set_modifier: string | null;
@@ -423,11 +425,22 @@ export interface BestSet {
   session_date: string;
 }
 
+/** The set with the highest est_1rm on record for a client + exercise — by
+ * value, not recency. Per-hand weight for per-side sets, in the set's unit. */
+export interface PeakSet {
+  weight: number;
+  unit: Unit;
+  reps: number;
+  is_per_side: boolean;
+  est_1rm: number;
+}
+
 export interface ExerciseInsight {
   exercise_id: number;
   sessions_used: number;
   last_used_at: string;
   last3_best: BestSet[];
+  peak_set: PeakSet | null;
 }
 
 export interface ClientExerciseInsights {
@@ -627,6 +640,24 @@ export interface StrengthSeries {
   exercise_name: string;
   unit: Unit;
   points: StrengthPoint[];
+}
+
+export interface StrengthWidgetOption {
+  exercise_id: number;
+  exercise_name: string;
+}
+
+/** Dashboard "Your Strength Progress" card payload. Options are ordered most
+ * recently logged first; delta_* are null when history is too thin. */
+export interface StrengthWidget {
+  unit: Unit;
+  exercise_options: StrengthWidgetOption[];
+  exercise_id: number | null;
+  exercise_name: string | null;
+  points: StrengthPoint[];
+  delta_value: number | null;
+  delta_pct: number | null;
+  window_days: number;
 }
 
 export interface ClientProgressStats {

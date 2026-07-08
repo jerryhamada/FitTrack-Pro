@@ -48,10 +48,12 @@ from ..schemas.client_portal import (
     ProgressExerciseOption,
     StrengthPoint,
     StrengthSeries,
+    StrengthWidget,
+    StrengthWidgetOption,
 )
 from ..services.invites import InviteError, InviteExpiredError, validate_invite_for_redemption
-from ..services.one_rm import estimated_1rm
-from ..services.units import from_lbs, to_lbs, total_load
+from ..services.one_rm import set_e1rm_lbs
+from ..services.units import from_lbs, to_lbs
 from ..services.volume import session_total_volume
 from .clients import _streak_weeks
 
@@ -735,7 +737,7 @@ def progress(
 
     # Exercises the client has actually trained (weighted sets), for the picker
     trained_rows = (
-        db.query(SetEntry.exercise_id, Exercise.name)
+        db.query(SetEntry.exercise_id, Exercise.name, func.max(WorkoutSession.started_at).label("last_used"))
         .join(WorkoutSession, WorkoutSession.id == SetEntry.session_id)
         .join(Exercise, Exercise.id == SetEntry.exercise_id)
         .filter(
@@ -743,7 +745,7 @@ def progress(
             WorkoutSession.ended_at.isnot(None),
             SetEntry.weight.isnot(None),
         )
-        .distinct()
+        .group_by(SetEntry.exercise_id, Exercise.name)
         .all()
     )
     options = sorted(
@@ -751,11 +753,14 @@ def progress(
             ProgressExerciseOption(
                 exercise_id=eid, exercise_name=name, pr_count=pr_count_by_exercise.get(eid, 0)
             )
-            for eid, name in trained_rows
+            for eid, name, _ in trained_rows
         ),
         key=lambda o: (-o.pr_count, o.exercise_name.lower()),
     )
-    default_id = most_improved_id or (options[0].exercise_id if options else None)
+    # Default lift: the most recently logged one — what the client just trained is
+    # what they most want to see the trend for.
+    most_recent = max(trained_rows, key=lambda r: r[2], default=None)
+    default_id = (most_recent[0] if most_recent else None) or most_improved_id
 
     return ClientProgress(
         unit=client.preferred_unit,
@@ -776,22 +781,10 @@ def progress(
     )
 
 
-@router.get("/progress/strength", response_model=StrengthSeries)
-def strength_series(
-    exercise_id: int,
-    range_key: str = Query("all", alias="range"),
-    client: Client = Depends(get_current_client),
-    db: Session = Depends(get_db),
-):
-    """Per-session best estimated 1RM for one lift, with sessions that produced a
-    PR flagged for trophy markers."""
-    now = datetime.now(timezone.utc)
-    start = _range_start(range_key, now)
-
-    exercise = db.query(Exercise).filter(Exercise.id == exercise_id).first()
-    if exercise is None:
-        raise HTTPException(status_code=404, detail="Exercise not found")
-
+def _e1rm_points(db: Session, client: Client, exercise_id: int, start: datetime | None) -> list[StrengthPoint]:
+    """Per-session-day best stored est_1rm for one lift, in the client's preferred
+    unit, with PR days flagged. Shared by the full Progress chart and the
+    Dashboard strength widget so both always plot the same numbers."""
     q = (
         db.query(SetEntry, WorkoutSession.started_at)
         .join(WorkoutSession, WorkoutSession.id == SetEntry.session_id)
@@ -810,21 +803,106 @@ def strength_series(
     pr_days: set = set()
     for st, started_at in q.all():
         day = started_at.astimezone(timezone.utc).date()
-        e1 = estimated_1rm(to_lbs(total_load(st.weight, st.is_per_side), st.weight_unit or client.preferred_unit), st.reps)
-        if e1 > best_by_day.get(day, 0.0):
+        e1 = set_e1rm_lbs(st)  # stored write-time est_1rm, normalized for charting
+        if e1 is not None and e1 > best_by_day.get(day, 0.0):
             best_by_day[day] = e1
         if st.is_pr:
             pr_days.add(day)
 
-    points = [
+    return [
         StrengthPoint(date=day, value=round(from_lbs(val, client.preferred_unit), 1), is_pr=day in pr_days)
         for day, val in sorted(best_by_day.items())
     ]
+
+
+@router.get("/progress/strength", response_model=StrengthSeries)
+def strength_series(
+    exercise_id: int,
+    range_key: str = Query("all", alias="range"),
+    client: Client = Depends(get_current_client),
+    db: Session = Depends(get_db),
+):
+    """Per-session best estimated 1RM for one lift, with sessions that produced a
+    PR flagged for trophy markers."""
+    now = datetime.now(timezone.utc)
+    start = _range_start(range_key, now)
+
+    exercise = db.query(Exercise).filter(Exercise.id == exercise_id).first()
+    if exercise is None:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
     return StrengthSeries(
         exercise_id=exercise_id,
         exercise_name=exercise.name,
         unit=client.preferred_unit,
-        points=points,
+        points=_e1rm_points(db, client, exercise_id, start),
+    )
+
+
+@router.get("/strength-summary", response_model=StrengthWidget)
+def strength_summary(
+    exercise_id: int | None = None,
+    client: Client = Depends(get_current_client),
+    db: Session = Depends(get_db),
+):
+    """Data for the Dashboard 'Your Strength Progress' card: the e1RM trend for
+    one exercise (default: the most recently logged one) plus a delta comparing
+    the current peak against the value nearest the start of a 30-day lookback.
+    The delta is null — never a misleading number — when history is too thin
+    (<2 points or younger than the window)."""
+    now = datetime.now(timezone.utc)
+    window_days = 30
+
+    # Exercises with weighted history, most recently logged first.
+    trained = (
+        db.query(SetEntry.exercise_id, Exercise.name, func.max(WorkoutSession.started_at).label("last_used"))
+        .join(WorkoutSession, WorkoutSession.id == SetEntry.session_id)
+        .join(Exercise, Exercise.id == SetEntry.exercise_id)
+        .filter(
+            WorkoutSession.client_id == client.id,
+            WorkoutSession.ended_at.isnot(None),
+            SetEntry.weight.isnot(None),
+            SetEntry.reps.isnot(None),
+        )
+        .group_by(SetEntry.exercise_id, Exercise.name)
+        .order_by(func.max(WorkoutSession.started_at).desc())
+        .all()
+    )
+    options = [StrengthWidgetOption(exercise_id=eid, exercise_name=name) for eid, name, _ in trained]
+
+    selected = next((o for o in options if o.exercise_id == exercise_id), None) or (options[0] if options else None)
+    if selected is None:
+        return StrengthWidget(
+            unit=client.preferred_unit,
+            exercise_options=[],
+            exercise_id=None,
+            exercise_name=None,
+            points=[],
+            delta_value=None,
+            delta_pct=None,
+            window_days=window_days,
+        )
+
+    points = _e1rm_points(db, client, selected.exercise_id, start=None)
+
+    # Delta: current peak vs the point nearest the start of the lookback window.
+    delta_value = delta_pct = None
+    window_start = (now - timedelta(days=window_days)).date()
+    if len(points) >= 2 and points[0].date <= window_start:
+        baseline = min(points, key=lambda p: abs((p.date - window_start).days))
+        peak = max(points, key=lambda p: p.value)
+        delta_value = round(peak.value - baseline.value, 1)
+        delta_pct = round((peak.value - baseline.value) / baseline.value * 100, 1) if baseline.value > 0 else None
+
+    return StrengthWidget(
+        unit=client.preferred_unit,
+        exercise_options=options,
+        exercise_id=selected.exercise_id,
+        exercise_name=selected.exercise_name,
+        points=points[-15:],  # sparkline stays legible; full history lives on Progress
+        delta_value=delta_value,
+        delta_pct=delta_pct,
+        window_days=window_days,
     )
 
 

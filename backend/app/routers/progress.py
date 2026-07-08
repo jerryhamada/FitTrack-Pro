@@ -15,8 +15,8 @@ from ..models.identity import User
 from ..models.roster import Client
 from ..models.sessions import SetEntry, WorkoutSession
 from ..schemas.progress import ProgressPoint, ProgressResponse, VolumeByCategoryPoint, VolumeByCategoryResponse
-from ..services.one_rm import estimated_1rm
-from ..services.units import from_lbs, to_lbs, total_load
+from ..services.one_rm import set_e1rm_lbs
+from ..services.units import from_lbs, to_lbs
 from ..services.volume import set_volume_lbs
 
 router = APIRouter(tags=["progress"])
@@ -58,8 +58,12 @@ def get_progress(
 
     best_per_day: dict = {}
     for s, started_at in sets:
-        load_lbs = to_lbs(total_load(s.weight, s.is_per_side), s.weight_unit or UnitEnum.lbs)
-        value_lbs = estimated_1rm(load_lbs, s.reps) if metric == "1rm" else load_lbs
+        # Weight-as-logged (per-hand for per-side sets), matching the stored
+        # est_1rm semantics — volume math is where per-side doubling lives.
+        load_lbs = to_lbs(s.weight, s.weight_unit or UnitEnum.lbs)
+        value_lbs = set_e1rm_lbs(s) if metric == "1rm" else load_lbs
+        if value_lbs is None:
+            continue
         day = started_at.date()
         if day not in best_per_day or value_lbs > best_per_day[day]:
             best_per_day[day] = value_lbs

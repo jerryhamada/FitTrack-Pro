@@ -10,6 +10,7 @@ import type {
   ProgressRange,
   RepeatRule,
   StrengthSeries,
+  StrengthWidget,
   BodyweightLog,
   ScheduledSession,
   CalendarResponse,
@@ -294,6 +295,8 @@ export const api = {
       req<StrengthSeries>(
         `/client-portal/progress/strength${qs({ exercise_id: exerciseId, range, client_id: clientId })}`
       ),
+    strengthSummary: (exerciseId?: number, clientId?: number): Promise<StrengthWidget> =>
+      req<StrengthWidget>(`/client-portal/strength-summary${qs({ exercise_id: exerciseId, client_id: clientId })}`),
     logBodyweight: (weight: number, clientId?: number): Promise<BodyweightLog> =>
       req<BodyweightLog>(`/client-portal/bodyweight${qs({ client_id: clientId })}`, jsonBody("POST", { weight })),
     redeemInvite: (token: string): Promise<{ client_id: number; client_name: string; trainer_name: string | null }> =>

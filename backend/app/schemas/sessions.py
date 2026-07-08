@@ -74,6 +74,8 @@ class SetOut(BaseModel):
     height_unit: DistanceUnitEnum | None = None
     is_per_side: bool
     reps: int | None
+    # Stored Epley estimate in this set's weight_unit (per-hand for per-side sets).
+    est_1rm: float | None = None
     effort_value: float | None
     effort_type: EffortTypeEnum | None
     set_modifier: str | None

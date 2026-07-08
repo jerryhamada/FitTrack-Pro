@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import get_current_trainer
 from ..database import get_db
 from ..models.activity import ActivityEvent
-from ..models.enums import ActivityEventTypeEnum, ScheduledStatusEnum
+from ..models.enums import ActivityEventTypeEnum, ScheduledStatusEnum, UnitEnum
 from ..models.exercises import Exercise
 from ..models.identity import User
 from ..models.prs import PR
@@ -34,6 +34,7 @@ from ..schemas.sessions import (
     SetUpdate,
 )
 from ..services.badges import evaluate_badges
+from ..services.one_rm import set_est_1rm
 from ..services.pr_detection import detect_and_record_prs
 from ..services.volume import session_total_volume
 
@@ -225,6 +226,10 @@ def log_set(
         + 1
     )
     new_set = SetEntry(session_id=session_id, set_number=set_number, **body.model_dump())
+    if new_set.weight is not None and new_set.weight_unit is None:
+        new_set.weight_unit = UnitEnum.lbs  # unit is optional on the wire; lbs is the default
+    # Stored at write time so peaks/charts never recompute the formula ad hoc.
+    new_set.est_1rm = set_est_1rm(new_set.weight, new_set.reps)
     db.add(new_set)
     _ensure_membership(db, session, body.exercise_id)  # first set for an exercise joins the session
     db.flush()  # need new_set.id before PR detection
@@ -344,13 +349,34 @@ def _get_set_or_404(db: Session, trainer_id: int, set_id: int) -> SetEntry:
     return s
 
 
+# Editing any of these changes what the set is worth — est_1rm must be recomputed
+# and its PR standing re-judged against history.
+_PERFORMANCE_FIELDS = {"weight", "weight_unit", "reps", "is_per_side", "status"}
+
+
 @router.put("/sets/{set_id}", response_model=SetOut)
 def update_set(
     set_id: int, body: SetUpdate, trainer: User = Depends(get_current_trainer), db: Session = Depends(get_db)
 ):
     s = _get_set_or_404(db, trainer.id, set_id)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changed = body.model_dump(exclude_unset=True)
+    for field, value in changed.items():
         setattr(s, field, value)
+
+    if _PERFORMANCE_FIELDS & changed.keys():
+        if s.weight is not None and s.weight_unit is None:
+            s.weight_unit = UnitEnum.lbs
+        s.est_1rm = set_est_1rm(s.weight, s.reps)
+        # Re-judge PRs from scratch for this set: drop the rows it earned at log
+        # time, then re-run detection against history. If the edit pushed it past
+        # the prior peak it gains PR status; if the edit dropped it below, it
+        # loses it — so the Add Set strip, dashboard, and charts stay consistent.
+        db.query(PR).filter(PR.set_id == s.id).delete(synchronize_session=False)
+        s.is_pr = False
+        s.pr_type = None
+        db.flush()
+        detect_and_record_prs(db, s.session.client_id, s)
+
     db.commit()
     db.refresh(s)
     exercise = db.query(Exercise).filter(Exercise.id == s.exercise_id).first()

@@ -1,3 +1,4 @@
+import { useRoute } from "@react-navigation/native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -34,6 +35,7 @@ const RANGES: { key: ProgressRange; label: string }[] = [
 export default function ClientProgressScreen() {
   const qc = useQueryClient();
   const clientId = usePreviewClientId();
+  const route = useRoute();
   const [range, setRange] = useState<ProgressRange>("3m");
   const [exerciseId, setExerciseId] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -45,7 +47,13 @@ export default function ClientProgressScreen() {
     queryFn: () => api.clientPortal.progress(range, clientId),
   });
 
-  // Default lift: most improved, else first option — set once data arrives.
+  // Arriving from the Dashboard strength card pre-selects that same exercise.
+  const paramExerciseId = (route.params as { exerciseId?: number } | undefined)?.exerciseId;
+  useEffect(() => {
+    if (paramExerciseId != null) setExerciseId(paramExerciseId);
+  }, [paramExerciseId]);
+
+  // Default lift: most recently logged (server-decided) — set once data arrives.
   useEffect(() => {
     if (exerciseId == null && data?.default_exercise_id != null) {
       setExerciseId(data.default_exercise_id);
@@ -148,10 +156,12 @@ export default function ClientProgressScreen() {
                 </TouchableOpacity>
               </View>
               {strengthLoading && <Spinner />}
-              {strength && strength.points.length === 0 && (
-                <Text style={styles.muted}>No weighted sets for this lift in the selected range.</Text>
+              {strength && strength.points.length < 2 && (
+                <Text style={styles.muted}>
+                  Keep logging — your strength trend will show up here after a couple more sessions. 💪
+                </Text>
               )}
-              {strength && strength.points.length > 0 && (
+              {strength && strength.points.length >= 2 && (
                 <>
                   <MiniBarChart
                     data={strength.points.map((p) => ({

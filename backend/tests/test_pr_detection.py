@@ -73,11 +73,15 @@ def test_mixed_units_lighter_kg_is_not_pr(db, session_row, exercise_row):
     assert kg_set.is_pr is False
 
 
-def test_per_side_load_doubles(db, session_row, exercise_row):
-    # 15s x10 (per-side, total 30) should beat a flat 25 x10 single dumbbell entry.
+def test_per_side_compares_per_hand_weight(db, session_row, exercise_row):
+    # Per-side sets compare by PER-HAND weight (not doubled), matching how they're
+    # displayed ("15 lb ea. x 10") and the stored est_1rm. 15s ea. x10 does NOT
+    # beat a flat 25 x10; 30s ea. x10 does.
     log_set(db, session_row, exercise_row, weight=25, is_per_side=False, reps=10)
     per_side = log_set(db, session_row, exercise_row, weight=15, is_per_side=True, reps=10)
-    assert per_side.is_pr is True
+    assert per_side.is_pr is False
+    heavier_per_side = log_set(db, session_row, exercise_row, weight=30, is_per_side=True, reps=10)
+    assert heavier_per_side.is_pr is True
 
 
 def test_identical_load_and_reps_is_not_a_new_pr(db, session_row, exercise_row):

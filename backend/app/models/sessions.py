@@ -75,6 +75,11 @@ class SetEntry(Base):
     )
     is_per_side: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Estimated 1RM (Epley), stored at write time in this set's weight_unit and
+    # recomputed whenever weight/reps change. Per-hand for per-side dumbbell sets
+    # (a 50 lb-per-hand press reads as a ~50-based 1RM, not 100). Null when the
+    # set has no weight or no reps. See services/one_rm.set_est_1rm.
+    est_1rm: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     effort_value: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     effort_type: Mapped[EffortTypeEnum | None] = mapped_column(
         Enum(EffortTypeEnum, name="effort_type_enum"), nullable=True

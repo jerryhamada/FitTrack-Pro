@@ -19,14 +19,16 @@ import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
 import { api, NetworkError } from "../lib/api";
 import { useSetWriteQueue } from "../lib/offlineSetQueue";
-import { formatHeight, formatWeight } from "../lib/utils";
-import type { DistanceUnit, Exercise, SetEntry, SetStatus, Unit } from "../types";
+import { formatHeight, formatWeight, toLbs } from "../lib/utils";
+import type { DistanceUnit, Exercise, PeakSet, SetEntry, SetStatus, Unit } from "../types";
 import type { RootStackParamList } from "../navigation/types";
 import { MUSCLE_REGIONS as MUSCLES } from "../lib/muscles";
 import { colors, font, radius, spacing } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SessionLog">;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+type InsightLite = { last3: string; sessions_used: number; last_used_at: string; peak: PeakSet | null };
 
 
 function formatElapsed(startedAt: string, now: number): string {
@@ -85,7 +87,7 @@ export default function SessionLogScreen() {
   }, [exercises]);
 
   const insightByExercise = useMemo(() => {
-    const map = new Map<number, { last3: string; sessions_used: number; last_used_at: string }>();
+    const map = new Map<number, InsightLite>();
     for (const i of insights?.exercises ?? []) {
       map.set(i.exercise_id, {
         last3: i.last3_best
@@ -93,6 +95,7 @@ export default function SessionLogScreen() {
           .join(", "),
         sessions_used: i.sessions_used,
         last_used_at: i.last_used_at,
+        peak: i.peak_set,
       });
     }
     return map;
@@ -188,6 +191,11 @@ export default function SessionLogScreen() {
         height_unit: (p.body.height_unit as SetEntry["height_unit"]) ?? null,
         is_per_side: false,
         reps: (p.body.reps as number | undefined) ?? null,
+        // Local Epley estimate so the peak strip stays live even before sync.
+        est_1rm:
+          p.body.weight != null && p.body.reps != null
+            ? (p.body.weight as number) * (1 + (p.body.reps as number) / 30)
+            : null,
         effort_value: null,
         effort_type: null,
         set_modifier: null,
@@ -241,6 +249,8 @@ export default function SessionLogScreen() {
     mutationFn: (body: Parameters<typeof api.sessions.logSet>[1]) => api.sessions.logSet(sessionId, body),
     onSuccess: (set) => {
       qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      // Peak-set strip refreshes live: the server peak includes this session's sets.
+      qc.invalidateQueries({ queryKey: ["exercise-insights", session?.client_id] });
       if (set.is_pr) celebratePr(set);
     },
     onError: (e, body) => {
@@ -256,7 +266,10 @@ export default function SessionLogScreen() {
 
   const deleteSet = useMutation({
     mutationFn: (setId: number) => api.sessions.deleteSet(setId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["session", sessionId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      qc.invalidateQueries({ queryKey: ["exercise-insights", session?.client_id] });
+    },
     onError: (e, setId) => {
       if (e instanceof NetworkError) {
         void enqueue({ kind: "deleteSet", sessionId, setId });
@@ -604,7 +617,7 @@ interface ExerciseCardProps {
   exerciseId: number;
   exercise: Exercise | undefined;
   sets: SetEntry[];
-  insight: { last3: string; sessions_used: number } | undefined;
+  insight: { last3: string; sessions_used: number; peak: PeakSet | null } | undefined;
   expanded: boolean;
   onToggle: () => void;
   defaultUnit: Unit;
@@ -650,6 +663,29 @@ function ExerciseCard({
   const [expandedNoteSetId, setExpandedNoteSetId] = useState<number | null>(null);
 
   const hasPr = sets.some((s) => s.is_pr);
+
+  // Current Peak Set for the info strip: the server-side peak (all history,
+  // including this session once synced) raced against this session's local sets
+  // so a peak-beating set updates the strip instantly — even mid-sync/offline.
+  const livePeak = useMemo<PeakSet | null>(() => {
+    let best = insight?.peak ?? null;
+    let bestLbs = best ? toLbs(best.est_1rm, best.unit) : -Infinity;
+    for (const s of sets) {
+      if (s.est_1rm == null || s.weight == null || s.reps == null || s.status !== "completed") continue;
+      const e1Lbs = toLbs(s.est_1rm, s.weight_unit ?? "lbs");
+      if (e1Lbs > bestLbs) {
+        bestLbs = e1Lbs;
+        best = {
+          weight: s.weight,
+          unit: s.weight_unit ?? "lbs",
+          reps: s.reps,
+          is_per_side: s.is_per_side,
+          est_1rm: Math.round(s.est_1rm * 10) / 10,
+        };
+      }
+    }
+    return best;
+  }, [insight?.peak, sets]);
 
   function submit() {
     if (tracksHeight) {
@@ -736,6 +772,31 @@ function ExerciseCard({
 
       {expanded && !selectMode && (
         <View style={cardStyles.body}>
+          {/* Peak Set info strip — highest est. 1RM on record for this client+exercise */}
+          {!tracksHeight && (
+            <View style={cardStyles.peakStrip}>
+              {livePeak ? (
+                <>
+                  <View style={cardStyles.peakCol}>
+                    <Text style={cardStyles.peakLabel}>Current Peak Set</Text>
+                    <Text style={cardStyles.peakValue}>
+                      {formatWeight(livePeak.weight, livePeak.unit)} × {livePeak.reps}
+                      {livePeak.is_per_side ? " ea." : ""}
+                    </Text>
+                  </View>
+                  <View style={cardStyles.peakCol}>
+                    <Text style={cardStyles.peakLabel}>Current Est. 1RM</Text>
+                    <Text style={cardStyles.peakValue}>
+                      {livePeak.est_1rm} {livePeak.unit}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <Text style={cardStyles.peakEmpty}>No peak set yet — this will be the first! 🚀</Text>
+              )}
+            </View>
+          )}
+
           {/* Logged sets */}
           {sets.map((s) => (
             <View key={s.id}>
@@ -890,7 +951,7 @@ interface SupersetCardProps {
   memberIds: number[];
   exerciseById: Map<number, Exercise>;
   setsByExercise: Map<number, SetEntry[]>;
-  insightByExercise: Map<number, { last3: string; sessions_used: number; last_used_at: string }>;
+  insightByExercise: Map<number, InsightLite>;
   expandedId: number | null;
   setExpandedId: (id: number | null) => void;
   defaultUnit: Unit;
@@ -977,7 +1038,7 @@ interface AddExerciseSheetProps {
   visible: boolean;
   onClose: () => void;
   exercises: Exercise[];
-  insightByExercise: Map<number, { last3: string; sessions_used: number; last_used_at: string }>;
+  insightByExercise: Map<number, InsightLite>;
   onPick: (exerciseId: number) => void;
 }
 
@@ -1293,6 +1354,20 @@ const cardStyles = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: 2 },
   setCount: { fontSize: font.xs, color: colors.muted },
   last3: { fontSize: font.xs, color: colors.muted, marginTop: 2 },
+  peakStrip: {
+    flexDirection: "row",
+    gap: spacing.base,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  peakCol: { flex: 1, gap: 2 },
+  peakLabel: { fontSize: font.xs, color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5 },
+  peakValue: { fontSize: font.sm, color: colors.accent, fontWeight: "700" },
+  peakEmpty: { fontSize: font.sm, color: colors.accent, fontWeight: "600" },
   chevron: { fontSize: font.lg, color: colors.muted },
   body: {
     borderTopWidth: 1,
