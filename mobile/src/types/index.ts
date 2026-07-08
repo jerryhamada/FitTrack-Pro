@@ -81,6 +81,7 @@ export interface Invite {
   status: InviteStatus;
   expires_at: string;
   invite_link: string;
+  delivered: boolean;
 }
 
 export interface ClientCreateResponse {

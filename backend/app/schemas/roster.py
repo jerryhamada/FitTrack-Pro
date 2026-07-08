@@ -100,18 +100,22 @@ class InviteOut(BaseModel):
     status: InviteStatusEnum
     expires_at: datetime
     invite_link: str
+    # Whether the invite email actually went out. False → the trainer should
+    # share invite_link manually (no provider configured, or delivery failed).
+    delivered: bool
 
     @staticmethod
     def from_invite(invite) -> "InviteOut":
+        # Import here to avoid a config import at module load.
+        from ..services.invites import invite_link
+
         return InviteOut(
             id=invite.id,
             token=invite.token,
             status=invite.status,
             expires_at=invite.expires_at,
-            # Landing page (GitHub Pages) that walks the client through installing
-            # the app and entering this invite code. The ?t= token is what the
-            # signup screen redeems. See docs/invite.html.
-            invite_link=f"https://jerryhamada.github.io/FitTrack-Pro/invite.html?t={invite.token}",
+            invite_link=invite_link(invite.token),
+            delivered=invite.delivered,
         )
 
 

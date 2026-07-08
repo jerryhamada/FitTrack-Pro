@@ -70,7 +70,9 @@ export default function AddClientScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.title}>{created.client.name} added</Text>
         <Text style={styles.subtitle}>
-          Share this invite link with your client.
+          {created.invite.delivered
+            ? `✓ Invite emailed to ${created.client.email}. They'll tap the link to install the app and sign up as your client.`
+            : `We couldn't email the invite automatically — copy the link below and send it to ${created.client.email} yourself.`}
         </Text>
         <View style={styles.card}>
           <Text style={styles.linkLabel}>Invite link</Text>
@@ -178,7 +180,7 @@ export default function AddClientScreen() {
       </View>
 
       <Btn
-        label={createClient.isPending ? "Adding..." : "Add Client & Generate Invite"}
+        label={createClient.isPending ? "Adding..." : "Add Client & Send Invite"}
         onPress={handleSubmit((v) => createClient.mutate(v))}
         loading={createClient.isPending}
         fullWidth

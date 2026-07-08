@@ -170,7 +170,7 @@ def create_client(
     invite = create_invite(client.id)
     db.add(invite)
     db.flush()
-    send_invite(invite)
+    send_invite(invite, client.name, client.email, trainer.name)
 
     db.add(
         ActivityEvent(
@@ -283,7 +283,7 @@ def resend_invite(client_id: int, trainer: User = Depends(get_current_trainer), 
     invite = create_invite(client.id)
     db.add(invite)
     db.flush()
-    send_invite(invite)
+    send_invite(invite, client.name, client.email, trainer.name)
     db.add(
         ActivityEvent(
             trainer_id=trainer.id,

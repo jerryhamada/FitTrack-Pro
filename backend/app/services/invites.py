@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import html
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from ..models.enums import InviteStatusEnum
+import httpx
+
+from ..config import get_settings
+from ..models.enums import DeliveryMethodEnum, InviteStatusEnum
 from ..models.roster import Invite
 
 logger = logging.getLogger(__name__)
 
 INVITE_EXPIRY = timedelta(hours=48)
+
+RESEND_ENDPOINT = "https://api.resend.com/emails"
 
 
 class InviteError(Exception):
@@ -36,12 +42,10 @@ class InviteRevokedError(InviteError):
 
 
 class InviteDeliveryError(Exception):
-    """Raised by a real delivery integration (email/SMS) when sending fails.
-
-    No provider is wired up yet; this exists so callers of send_invite() already
-    handle the failure path and a future Twilio/Postmark integration can raise it
-    without touching every call site.
-    """
+    """Raised by the email delivery layer (Resend) when sending fails or no
+    provider is configured. send_invite() catches this and marks the invite
+    undelivered rather than failing the request — the link still works when the
+    trainer shares it manually."""
 
 
 def create_invite(client_id: int) -> Invite:
@@ -53,22 +57,90 @@ def create_invite(client_id: int) -> Invite:
     )
 
 
-def send_invite(invite: Invite) -> Invite:
-    """Deliver the invite to the client. May raise InviteDeliveryError once a real
-    provider is integrated — callers should treat delivery failure as non-fatal
-    (the invite link still works when shared manually).
+def invite_link(token: str) -> str:
+    """Public URL a client taps to accept an invite. Points at the landing page
+    that walks them through installing the app and entering the code; the ?t=
+    token is what the signup screen redeems."""
+    base = get_settings().invite_landing_base_url.rstrip("/")
+    return f"{base}?t={token}"
 
-    TODO(Phase 2): plug in real email/SMS delivery (e.g. Twilio, Postmark) here.
-    For now delivery is a stub: the trainer shares the link manually, and we log
-    so the no-op is visible in server logs rather than silent.
-    """
-    invite.delivered = False
-    logger.warning(
-        "Invite %s for client %s not delivered automatically (no delivery provider "
-        "configured) — trainer must share the link manually.",
-        invite.id,
-        invite.client_id,
+
+def _invite_email_html(client_name: str, trainer_name: str | None, link: str) -> str:
+    who = html.escape(trainer_name) if trainer_name else "Your trainer"
+    name = html.escape(client_name.split()[0]) if client_name.strip() else "there"
+    safe_link = html.escape(link, quote=True)
+    return f"""\
+<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#0f1115">
+  <h2 style="margin:0 0 8px">Hi {name},</h2>
+  <p style="font-size:15px;line-height:1.6;color:#333">
+    {who} invited you to train with them on <strong>LiftIQ</strong> — your workouts,
+    programs, and progress, all in one place.
+  </p>
+  <p style="margin:28px 0">
+    <a href="{safe_link}"
+       style="background:#0a7d3c;color:#fff;text-decoration:none;font-weight:700;
+              font-size:15px;padding:13px 22px;border-radius:12px;display:inline-block">
+      Accept your invite
+    </a>
+  </p>
+  <p style="font-size:13px;line-height:1.6;color:#777">
+    Or paste this link into your browser:<br>
+    <a href="{safe_link}" style="color:#0a7d3c">{safe_link}</a>
+  </p>
+  <p style="font-size:12px;color:#999;margin-top:24px">
+    This invite expires in 48 hours. If you weren't expecting it, you can ignore this email.
+  </p>
+</div>"""
+
+
+def _deliver_email(to_email: str, subject: str, html_body: str) -> None:
+    """Send one transactional email via Resend. Raises InviteDeliveryError on any
+    failure (unconfigured provider, network error, non-2xx) so send_invite can
+    record the invite as undelivered."""
+    settings = get_settings()
+    if not settings.resend_api_key:
+        raise InviteDeliveryError("No email provider configured (RESEND_API_KEY unset).")
+    try:
+        resp = httpx.post(
+            RESEND_ENDPOINT,
+            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
+            json={
+                "from": settings.invite_from_email,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_body,
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        detail = getattr(getattr(e, "response", None), "text", "") or str(e)
+        raise InviteDeliveryError(detail) from e
+
+
+def send_invite(invite: Invite, client_name: str, client_email: str | None, trainer_name: str | None) -> Invite:
+    """Email the invite link to the client. Delivery failure is non-fatal: the
+    invite is flagged undelivered (invite.delivered = False) and the trainer can
+    still share the link manually. Callers persist the invite either way.
+
+    Returns the same invite with delivery_method / delivered updated in place."""
+    invite.delivery_method = DeliveryMethodEnum.email
+    if not client_email:
+        invite.delivered = False
+        logger.warning("Invite %s has no client email — cannot deliver.", invite.id)
+        return invite
+
+    link = invite_link(invite.token)
+    subject = (
+        f"{trainer_name} invited you to LiftIQ" if trainer_name else "You've been invited to LiftIQ"
     )
+    try:
+        _deliver_email(client_email, subject, _invite_email_html(client_name, trainer_name, link))
+        invite.delivered = True
+        logger.info("Invite %s emailed to %s", invite.id, client_email)
+    except InviteDeliveryError as e:
+        invite.delivered = False
+        logger.warning("Invite %s not delivered to %s: %s", invite.id, client_email, e)
     return invite
 
 

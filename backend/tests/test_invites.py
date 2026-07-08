@@ -127,9 +127,42 @@ def test_login_already_linked_to_other_client_rejected(redeem_api, db, trainer, 
     assert "different client" in res.json()["detail"].lower()
 
 
-def test_send_invite_logs_undelivered_warning(db, invite, caplog):
-    """Delivery is still a stub — make sure the no-op is loud in logs, not silent."""
+def test_send_invite_undelivered_when_provider_unconfigured(db, invite, client_row, caplog):
+    """No RESEND_API_KEY (the default in tests) → delivery is a graceful no-op:
+    the invite is flagged undelivered and the no-op is loud in logs, not silent."""
     with caplog.at_level(logging.WARNING, logger="app.services.invites"):
-        send_invite(invite)
+        send_invite(invite, client_row.name, client_row.email, "Coach Pat")
     assert invite.delivered is False
     assert any("not delivered" in r.message for r in caplog.records)
+
+
+def test_send_invite_delivers_via_resend_when_configured(db, invite, client_row, monkeypatch):
+    """With a provider configured, send_invite POSTs to Resend and flags the
+    invite delivered. The HTTP call is stubbed so no real email is sent."""
+    from app.config import get_settings
+    from app.models.enums import DeliveryMethodEnum
+    import app.services.invites as invites_mod
+
+    monkeypatch.setattr(get_settings(), "resend_api_key", "re_test_key")
+    sent: dict = {}
+
+    class _Resp:
+        def raise_for_status(self):  # noqa: D401 - stub
+            return None
+
+    def _fake_post(url, headers, json, timeout):
+        sent["url"] = url
+        sent["json"] = json
+        sent["auth"] = headers["Authorization"]
+        return _Resp()
+
+    monkeypatch.setattr(invites_mod.httpx, "post", _fake_post)
+
+    send_invite(invite, client_row.name, client_row.email, "Coach Pat")
+
+    assert invite.delivered is True
+    assert invite.delivery_method == DeliveryMethodEnum.email
+    assert sent["url"] == invites_mod.RESEND_ENDPOINT
+    assert sent["json"]["to"] == [client_row.email]
+    assert invite.token in sent["json"]["html"]
+    assert sent["auth"] == "Bearer re_test_key"

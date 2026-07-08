@@ -43,11 +43,22 @@ export default function AddClientPage() {
   });
 
   if (created) {
+    const { invite, client } = created;
     return (
       <div className="mx-auto max-w-md">
-        <h1 className="mb-1 text-2xl font-bold text-white">{created.client.name} added</h1>
+        <h1 className="mb-1 text-2xl font-bold text-white">{client.name} added</h1>
         <p className="mb-6 text-sm text-muted">
-          Client login isn't live yet (that lands in Phase 2) — share this invite link manually for now.
+          {invite.delivered ? (
+            <>
+              ✓ Invite emailed to <span className="text-white">{client.email}</span>. They'll tap the link
+              to install the app and sign up as your client.
+            </>
+          ) : (
+            <>
+              We couldn't email the invite automatically — copy the link below and send it to{" "}
+              <span className="text-white">{client.email}</span> yourself.
+            </>
+          )}
         </p>
         <div className="card mb-6 flex flex-col gap-2">
           <span className="text-xs uppercase tracking-wide text-muted">Invite link</span>
@@ -105,7 +116,7 @@ export default function AddClientPage() {
           <p className="text-sm text-danger">{(createClient.error as Error).message}</p>
         )}
         <button className="btn-primary mt-2" type="submit" disabled={isSubmitting || createClient.isPending}>
-          {createClient.isPending ? "Adding..." : "Add Client & Generate Invite"}
+          {createClient.isPending ? "Adding..." : "Add Client & Send Invite"}
         </button>
       </form>
     </div>

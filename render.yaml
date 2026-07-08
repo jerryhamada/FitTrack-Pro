@@ -17,6 +17,14 @@ services:
         sync: false
       - key: DEV_AUTH_BYPASS
         value: "0"
+      # Invite email delivery (Resend). Without RESEND_API_KEY, invite creation
+      # still works but the email is skipped and the trainer shares the link
+      # manually. INVITE_FROM_EMAIL must be a Resend-verified sender to reach
+      # real client inboxes.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: INVITE_FROM_EMAIL
+        sync: false
 
 databases:
   - name: liftiq-db
