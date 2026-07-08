@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import Btn from "../components/Btn";
 import Input from "../components/Input";
+import OAuthButtons from "../components/OAuthButtons";
 import { parseInviteToken, usePendingInvite } from "../contexts/PendingInvite";
 import { useSignupRole } from "../contexts/SignupRole";
 import { api } from "../lib/api";
@@ -172,6 +173,7 @@ export default function SignUpScreen() {
                 loading={loading}
                 fullWidth
               />
+              <OAuthButtons />
             </>
           ) : (
             <>

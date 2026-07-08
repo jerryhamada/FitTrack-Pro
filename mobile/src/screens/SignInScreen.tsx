@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import Btn from "../components/Btn";
 import Input from "../components/Input";
+import OAuthButtons from "../components/OAuthButtons";
 import { clerkErrorMessage } from "../lib/clerkError";
 import type { AuthStackParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
@@ -81,6 +82,7 @@ export default function SignInScreen() {
             loading={loading}
             fullWidth
           />
+          <OAuthButtons />
         </View>
 
         <TouchableOpacity onPress={() => navigation.navigate("RoleSelect")} style={styles.switchBtn}>
