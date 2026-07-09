@@ -48,6 +48,16 @@ class LinkRequestOut(BaseModel):
     created_at: datetime
 
 
+class JoinByCodeRequest(BaseModel):
+    code: str
+
+
+class JoinByCodeResponse(BaseModel):
+    trainer_id: int
+    trainer_name: str | None
+    trainer_business: str | None
+
+
 class PortalNextSession(BaseModel):
     scheduled_at: datetime
     trainer_name: str | None

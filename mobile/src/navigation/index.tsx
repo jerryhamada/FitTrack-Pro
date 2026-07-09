@@ -208,10 +208,15 @@ function MainTabs({ navigation }: MainTabsProps) {
 }
 
 function AuthNavigator() {
+  // Role selection ("trainer or client?") is the entry point; existing users
+  // reach Sign In via the "Already have an account?" link.
   return (
-    <AuthStack.Navigator screenOptions={{ ...stackHeaderStyle, headerShown: false }}>
-      <AuthStack.Screen name="SignIn" component={SignInScreen} />
+    <AuthStack.Navigator
+      initialRouteName="RoleSelect"
+      screenOptions={{ ...stackHeaderStyle, headerShown: false }}
+    >
       <AuthStack.Screen name="RoleSelect" component={RoleSelectScreen} />
+      <AuthStack.Screen name="SignIn" component={SignInScreen} />
       <AuthStack.Screen name="SignUp" component={SignUpScreen} />
     </AuthStack.Navigator>
   );

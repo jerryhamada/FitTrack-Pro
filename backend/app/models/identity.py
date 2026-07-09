@@ -44,6 +44,9 @@ class TrainerProfile(Base):
         default=DistanceUnitEnum.inches,
     )
     notification_prefs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Shareable code clients can enter to join this trainer directly (no search,
+    # no approval step). NULL until the trainer generates one.
+    join_code: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     subscription_status: Mapped[str] = mapped_column(String, nullable=False, default="trial")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

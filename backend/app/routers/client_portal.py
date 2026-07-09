@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import _verify_token, get_clerk_payload
 from ..config import get_settings
 from ..database import get_db
+from ..models.activity import ActivityEvent
 from ..models.enums import (
+    ActivityEventTypeEnum,
     ClientStatusEnum,
     InviteStatusEnum,
     LinkRequestStatusEnum,
@@ -40,6 +42,8 @@ from ..schemas.client_portal import (
     InvitePreviewOut,
     InviteRedeemRequest,
     InviteRedeemResponse,
+    JoinByCodeRequest,
+    JoinByCodeResponse,
     LinkRequestCreate,
     LinkRequestOut,
     PortalCurrentProgram,
@@ -327,6 +331,62 @@ def create_link_request(
         trainer_name=trainer.name,
         status=req.status.value,
         created_at=req.created_at,
+    )
+
+
+@router.post("/join-by-code", response_model=JoinByCodeResponse)
+def join_by_code(
+    body: JoinByCodeRequest,
+    client: Client = Depends(get_current_client),
+    db: Session = Depends(get_db),
+):
+    """Join a trainer directly using their shareable join code. Unlike a link
+    request, holding the code IS the authorization (same trust model as an
+    invite link), so the client is linked immediately — no approval step."""
+    if client.trainer_id is not None:
+        raise HTTPException(status_code=409, detail="You're already connected to a trainer.")
+
+    code = body.code.strip().upper()
+    if not code:
+        raise HTTPException(status_code=422, detail="Enter a code")
+    profile = db.query(TrainerProfile).filter(TrainerProfile.join_code == code).first()
+    trainer = (
+        db.query(User).filter(User.id == profile.user_id, User.role == RoleEnum.trainer).first()
+        if profile
+        else None
+    )
+    if trainer is None:
+        raise HTTPException(status_code=404, detail="That code doesn't match any trainer. Double-check it and try again.")
+
+    client.trainer_id = trainer.id
+    now = datetime.now(timezone.utc)
+    # Joining by code supersedes any pending connect request: to this trainer it's
+    # effectively an acceptance; to another trainer it's withdrawn.
+    for req in (
+        db.query(TrainerLinkRequest)
+        .filter(
+            TrainerLinkRequest.client_id == client.id,
+            TrainerLinkRequest.status == LinkRequestStatusEnum.pending,
+        )
+        .all()
+    ):
+        req.status = (
+            LinkRequestStatusEnum.accepted if req.trainer_id == trainer.id else LinkRequestStatusEnum.declined
+        )
+        req.responded_at = now
+    db.add(
+        ActivityEvent(
+            trainer_id=trainer.id,
+            client_id=client.id,
+            event_type=ActivityEventTypeEnum.client_added,
+            payload={"client_name": client.name, "via": "join_code"},
+        )
+    )
+    db.commit()
+    return JoinByCodeResponse(
+        trainer_id=trainer.id,
+        trainer_name=trainer.name,
+        trainer_business=profile.business_name,
     )
 
 

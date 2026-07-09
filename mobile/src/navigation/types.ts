@@ -1,3 +1,4 @@
+import type { NavigatorScreenParams } from "@react-navigation/native";
 import type { SessionSummary } from "../types";
 
 export type AuthStackParamList = {
@@ -7,7 +8,7 @@ export type AuthStackParamList = {
 };
 
 export type RootStackParamList = {
-  MainTabs: undefined;
+  MainTabs: NavigatorScreenParams<TabParamList> | undefined;
   AddClient: undefined;
   ClientProfile: { clientId: number; initialTab?: "Overview" | "History" | "PRs" | "Notes" | "Programs" };
   Notifications: undefined;

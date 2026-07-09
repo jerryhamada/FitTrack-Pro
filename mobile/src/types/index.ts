@@ -703,3 +703,24 @@ export interface LinkRequest {
   status: string;
   created_at: string;
 }
+
+/** A client's connect request as the trainer sees it (pending-requests list). */
+export interface TrainerLinkRequest {
+  id: number;
+  client_id: number;
+  client_name: string;
+  client_email: string | null;
+  status: string;
+  created_at: string;
+}
+
+/** The trainer's shareable join code; null until generated. */
+export interface JoinCode {
+  code: string | null;
+}
+
+export interface JoinByCodeResponse {
+  trainer_id: number;
+  trainer_name: string | null;
+  trainer_business: string | null;
+}

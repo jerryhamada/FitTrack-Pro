@@ -28,6 +28,8 @@ import type {
   NoteCategory,
   Exercise,
   Invite,
+  JoinByCodeResponse,
+  JoinCode,
   PR,
   Program,
   ProgramCreateInput,
@@ -35,6 +37,7 @@ import type {
   ProgressResponse,
   RecentPR,
   LinkRequest,
+  TrainerLinkRequest,
   SessionListItem,
   SessionSummary,
   SetEntry,
@@ -164,6 +167,8 @@ export const api = {
       req<Trainer>("/trainer/me", jsonBody("PUT", body)),
     subscription: (): Promise<{ status: string; plan: string | null; renews_at: string | null }> =>
       req("/trainer/subscription"),
+    joinCode: (): Promise<JoinCode> => req<JoinCode>("/trainer/join-code"),
+    generateJoinCode: (): Promise<JoinCode> => req<JoinCode>("/trainer/join-code", { method: "POST" }),
   },
 
   clients: {
@@ -203,6 +208,11 @@ export const api = {
     badges: (id: number): Promise<ClientBadge[]> => req<ClientBadge[]>(`/clients/${id}/badges`),
     calendar: (id: number, year: number, month: number): Promise<CalendarResponse> =>
       req<CalendarResponse>(`/clients/${id}/calendar${qs({ year, month })}`),
+    linkRequests: (): Promise<TrainerLinkRequest[]> => req<TrainerLinkRequest[]>("/clients/link-requests"),
+    acceptLinkRequest: (id: number): Promise<TrainerLinkRequest> =>
+      req<TrainerLinkRequest>(`/clients/link-requests/${id}/accept`, { method: "POST" }),
+    declineLinkRequest: (id: number): Promise<TrainerLinkRequest> =>
+      req<TrainerLinkRequest>(`/clients/link-requests/${id}/decline`, { method: "POST" }),
   },
 
   exercises: {
@@ -311,6 +321,8 @@ export const api = {
       req<TrainerSearchResult[]>(`/client-portal/trainer-search${qs({ q })}`),
     requestLink: (trainerId: number): Promise<LinkRequest> =>
       req<LinkRequest>("/client-portal/link-requests", jsonBody("POST", { trainer_id: trainerId })),
+    joinByCode: (code: string): Promise<JoinByCodeResponse> =>
+      req<JoinByCodeResponse>("/client-portal/join-by-code", jsonBody("POST", { code })),
   },
 
   auth: {

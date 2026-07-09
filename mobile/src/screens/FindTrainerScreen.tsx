@@ -50,6 +50,7 @@ export default function FindTrainerScreen({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [code, setCode] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), SEARCH_DEBOUNCE_MS);
@@ -75,6 +76,20 @@ export default function FindTrainerScreen({ onDone }: { onDone: () => void }) {
     },
   });
 
+  const joinByCode = useMutation({
+    mutationFn: (joinCode: string) => api.clientPortal.joinByCode(joinCode),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["whoami"] });
+      const business = res.trainer_business ? ` (${res.trainer_business})` : "";
+      Alert.alert(
+        "You're connected!",
+        `You've joined ${res.trainer_name ?? "your trainer"}${business}.`,
+        [{ text: "Let's go", onPress: onDone }]
+      );
+    },
+    onError: (err) => Alert.alert("Couldn't join", (err as Error).message),
+  });
+
   function confirmRequest(trainer: TrainerSearchResult) {
     const business = trainer.business_name ? ` (${trainer.business_name})` : "";
     Alert.alert(
@@ -97,7 +112,7 @@ export default function FindTrainerScreen({ onDone }: { onDone: () => void }) {
     >
       <View style={styles.header}>
         <Text style={styles.title}>Find your trainer</Text>
-        <Text style={styles.subtitle}>Search by name to connect your account</Text>
+        <Text style={styles.subtitle}>Search by name, or enter your trainer's code</Text>
       </View>
 
       <View style={styles.searchBox}>
@@ -117,6 +132,30 @@ export default function FindTrainerScreen({ onDone }: { onDone: () => void }) {
             <MaterialCommunityIcons name="close-circle" size={18} color={colors.muted} />
           </TouchableOpacity>
         )}
+      </View>
+
+      <View style={styles.codeRow}>
+        <TextInput
+          style={styles.codeInput}
+          value={code}
+          onChangeText={(t) => setCode(t.toUpperCase())}
+          placeholder="Have a trainer code?"
+          placeholderTextColor={colors.muted}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={12}
+        />
+        <TouchableOpacity
+          style={[styles.joinBtn, (code.trim().length === 0 || joinByCode.isPending) && styles.joinBtnDisabled]}
+          disabled={code.trim().length === 0 || joinByCode.isPending}
+          onPress={() => joinByCode.mutate(code.trim())}
+        >
+          {joinByCode.isPending ? (
+            <ActivityIndicator size="small" color="#000" />
+          ) : (
+            <Text style={styles.joinBtnText}>Join</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.results}>
@@ -183,6 +222,29 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchInput: { flex: 1, color: colors.white, fontSize: font.base, height: "100%" },
+  codeRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  codeInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+    color: colors.white,
+    fontSize: font.base,
+    letterSpacing: 2,
+  },
+  joinBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    height: 44,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  joinBtnDisabled: { opacity: 0.5 },
+  joinBtnText: { color: "#000", fontSize: font.sm, fontWeight: "700" },
   results: { flex: 1, marginTop: spacing.base },
   hint: { fontSize: font.sm, color: colors.muted, textAlign: "center", marginTop: spacing.xl },
   empty: { alignItems: "center", gap: spacing.sm, marginTop: spacing.xxl, paddingHorizontal: spacing.lg },

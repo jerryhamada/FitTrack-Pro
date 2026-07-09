@@ -100,6 +100,10 @@ export default function NotificationsScreen() {
         // Session Detail lives on the Schedule tab; open it there.
         navigation.navigate("MainTabs");
         break;
+      case "client_link_request":
+        // The pending-requests section lives at the top of the Clients tab.
+        navigation.navigate("MainTabs", { screen: "ClientsTab" });
+        break;
     }
   }
 

@@ -52,3 +52,9 @@ class WhoAmIOut(BaseModel):
 class RegisterClientOut(BaseModel):
     client_id: int
     client_name: str
+
+
+class JoinCodeOut(BaseModel):
+    """The trainer's shareable join code; null until generated."""
+
+    code: str | None

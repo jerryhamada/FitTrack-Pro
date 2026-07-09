@@ -24,7 +24,7 @@ import { api } from "../lib/api";
 import { daysAgo } from "../lib/utils";
 import type { RootStackParamList, TabParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
-import type { ClientPulse, GoalType } from "../types";
+import type { ClientPulse, GoalType, TrainerLinkRequest } from "../types";
 
 type Nav = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>,
@@ -87,6 +87,28 @@ export default function ClientsScreen() {
   const { data: clients, isLoading } = useQuery({
     queryKey: ["clients", "all"],
     queryFn: () => api.clients.list("all"),
+  });
+
+  // Pending connect requests from self-signed-up clients ("Find your trainer").
+  const { data: linkRequests } = useQuery({
+    queryKey: ["link-requests"],
+    queryFn: api.clients.linkRequests,
+  });
+
+  const respondToRequest = useMutation({
+    mutationFn: ({ id, action }: { id: number; action: "accept" | "decline" }) =>
+      action === "accept" ? api.clients.acceptLinkRequest(id) : api.clients.declineLinkRequest(id),
+    onSuccess: (_res, { action }) => {
+      qc.invalidateQueries({ queryKey: ["link-requests"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      if (action === "accept") qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+    onError: (err) => {
+      Alert.alert("Error", (err as Error).message);
+      // A 409 means the request was handled elsewhere (or the client joined
+      // another trainer) — refresh so the stale card disappears.
+      qc.invalidateQueries({ queryKey: ["link-requests"] });
+    },
   });
 
   const startSession = useMutation({
@@ -196,6 +218,62 @@ export default function ClientsScreen() {
     );
   };
 
+  const renderLinkRequest = (req: TrainerLinkRequest) => {
+    const isResponding = respondToRequest.isPending && respondToRequest.variables?.id === req.id;
+    return (
+      <View key={req.id} style={styles.requestCard}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{req.client_name.slice(0, 1).toUpperCase()}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.name} numberOfLines={1}>
+            {req.client_name}
+          </Text>
+          {req.client_email != null && (
+            <Text style={styles.meta} numberOfLines={1}>
+              {req.client_email}
+            </Text>
+          )}
+        </View>
+        {isResponding ? (
+          <ActivityIndicator size="small" color={colors.accent} />
+        ) : (
+          <View style={styles.requestActions}>
+            <TouchableOpacity
+              style={styles.acceptBtn}
+              disabled={respondToRequest.isPending}
+              onPress={() => respondToRequest.mutate({ id: req.id, action: "accept" })}
+            >
+              <Text style={styles.acceptBtnText}>Accept</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.declineBtn}
+              disabled={respondToRequest.isPending}
+              onPress={() =>
+                Alert.alert(
+                  "Decline request?",
+                  `${req.client_name} won't be added to your roster. They can send a new request later.`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Decline",
+                      style: "destructive",
+                      onPress: () => respondToRequest.mutate({ id: req.id, action: "decline" }),
+                    },
+                  ]
+                )
+              }
+            >
+              <Text style={styles.declineBtnText}>Decline</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const pendingRequests = linkRequests ?? [];
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -254,6 +332,19 @@ export default function ClientsScreen() {
           keyExtractor={(c) => String(c.id)}
           contentContainerStyle={styles.listContent}
           renderItem={renderCard}
+          ListHeaderComponent={
+            pendingRequests.length > 0 ? (
+              <View style={styles.requestsSection}>
+                <Text style={styles.requestsTitle}>
+                  Pending requests ({pendingRequests.length})
+                </Text>
+                <Text style={styles.requestsSubtitle}>
+                  These people want to join you as clients.
+                </Text>
+                {pendingRequests.map(renderLinkRequest)}
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             (clients?.length ?? 0) === 0 ? (
               <EmptyState
@@ -434,6 +525,36 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   clearFilters: { color: colors.accent, fontSize: font.sm, fontWeight: "600" },
+  requestsSection: { gap: spacing.sm, marginBottom: spacing.md },
+  requestsTitle: { fontSize: font.md, fontWeight: "700", color: colors.white },
+  requestsSubtitle: { fontSize: font.xs, color: colors.muted, marginTop: -spacing.xs },
+  requestCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.accent + "40",
+    padding: spacing.base,
+  },
+  requestActions: { flexDirection: "row", gap: spacing.sm },
+  acceptBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  acceptBtnText: { color: "#000", fontSize: font.xs, fontWeight: "700" },
+  declineBtn: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  declineBtnText: { color: colors.muted, fontSize: font.xs, fontWeight: "600" },
   sheetTitle: { fontSize: font.lg, fontWeight: "700", color: colors.white, marginBottom: spacing.sm },
   sheetOption: { padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
   sheetOptionActive: { backgroundColor: colors.accentDim },

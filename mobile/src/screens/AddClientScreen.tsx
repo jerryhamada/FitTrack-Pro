@@ -47,8 +47,16 @@ export default function AddClientScreen() {
   const qc = useQueryClient();
   const [created, setCreated] = useState<ClientCreateResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const { data: trainer } = useQuery({ queryKey: ["trainer", "me"], queryFn: api.trainer.me });
+  const { data: joinCode } = useQuery({ queryKey: ["trainer", "join-code"], queryFn: api.trainer.joinCode });
+
+  const generateCode = useMutation({
+    mutationFn: api.trainer.generateJoinCode,
+    onSuccess: (res) => qc.setQueryData(["trainer", "join-code"], res),
+    onError: (err) => Alert.alert("Error", (err as Error).message),
+  });
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -185,6 +193,59 @@ export default function AddClientScreen() {
         loading={createClient.isPending}
         fullWidth
       />
+
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.linkLabel}>Your trainer code</Text>
+        <Text style={styles.codeHint}>
+          Share this code with clients — they enter it when signing up (or later in their app) to
+          join you instantly, no invite needed.
+        </Text>
+        {joinCode?.code ? (
+          <>
+            <Text style={styles.code} selectable>
+              {joinCode.code}
+            </Text>
+            <TouchableOpacity
+              style={styles.copyBtn}
+              onPress={() => {
+                Clipboard.setString(joinCode.code!);
+                setCodeCopied(true);
+                setTimeout(() => setCodeCopied(false), 1500);
+              }}
+            >
+              <Text style={styles.copyBtnText}>{codeCopied ? "Copied!" : "Copy code"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                Alert.alert(
+                  "Generate a new code?",
+                  "Your current code stops working immediately — anyone still holding it won't be able to join.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Generate new code", onPress: () => generateCode.mutate() },
+                  ]
+                )
+              }
+              disabled={generateCode.isPending}
+            >
+              <Text style={styles.regenerate}>Generate a new code</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <Btn
+            label={generateCode.isPending ? "Creating..." : "Create my code"}
+            onPress={() => generateCode.mutate()}
+            loading={generateCode.isPending}
+            fullWidth
+          />
+        )}
+      </View>
     </ScrollView>
   );
 }
@@ -213,6 +274,20 @@ const styles = StyleSheet.create({
   },
   copyBtnText: { color: colors.white, fontWeight: "600", fontSize: font.sm },
   expires: { fontSize: font.xs, color: colors.muted },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { fontSize: font.xs, color: colors.muted, textTransform: "uppercase", letterSpacing: 1 },
+  codeHint: { fontSize: font.sm, color: colors.muted, lineHeight: 19 },
+  code: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.accent,
+    letterSpacing: 6,
+    textAlign: "center",
+    fontFamily: "monospace",
+    paddingVertical: spacing.sm,
+  },
+  regenerate: { fontSize: font.sm, color: colors.muted, textAlign: "center", textDecorationLine: "underline" },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: {
     backgroundColor: colors.surface,
