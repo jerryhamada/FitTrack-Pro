@@ -5,6 +5,7 @@ from ..models.exercises import Exercise
 from ..models.prs import Badge
 from ..services.badges import BADGE_SEED
 from .exercise_data import EXERCISES
+from .exercise_library import seed_exercise_library
 
 
 def seed_exercises(db) -> int:
@@ -36,9 +37,13 @@ def main() -> None:
     db = SessionLocal()
     try:
         ex_count = seed_exercises(db)
+        lib_inserted, lib_enriched = seed_exercise_library(db)
         badge_count = seed_badges(db)
         db.commit()
-        print(f"Seeded {ex_count} exercises, {badge_count} badges.")
+        print(
+            f"Seeded {ex_count} exercises, {badge_count} badges. "
+            f"Library import: {lib_inserted} added, {lib_enriched} enriched."
+        )
     finally:
         db.close()
 

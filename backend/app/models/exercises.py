@@ -21,6 +21,8 @@ class Exercise(Base):
     equipment: Mapped[str | None] = mapped_column(String, nullable=True)
     exercise_type: Mapped[str | None] = mapped_column(String, nullable=True)  # compound | isolation
     demo_media_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    images: Mapped[list | None] = mapped_column(JSON, nullable=True)  # demo photo URLs (start/end position)
+    level: Mapped[str | None] = mapped_column(String, nullable=True)  # beginner | intermediate | expert
     instructions_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ordered "how to perform" steps
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tracks_height: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

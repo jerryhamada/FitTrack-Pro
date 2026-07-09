@@ -1,24 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import BottomSheet from "../components/BottomSheet";
 import Btn from "../components/Btn";
 import EmptyState from "../components/EmptyState";
 import Input from "../components/Input";
 import Pill from "../components/Pill";
 import Spinner from "../components/Spinner";
-import BodyDiagram from "../components/BodyDiagram";
+import BodyDiagram, { MuscleThumb } from "../components/BodyDiagram";
 import { api } from "../lib/api";
 import { MUSCLE_LABELS, MUSCLE_REGIONS, type MuscleRegion } from "../lib/muscles";
 import type { Exercise } from "../types";
 import { colors, font, radius, spacing } from "../theme";
 
-const MUSCLE_GROUPS: { title: string; muscles: string[] }[] = [
-  { title: "Upper Body", muscles: ["chest", "back", "shoulders", "biceps", "triceps", "forearms"] },
-  { title: "Lower Body", muscles: ["quads", "hamstrings", "glutes", "calves"] },
-  { title: "Core", muscles: ["core"] },
+// Category browse order — legs deliberately split into quads / hamstrings / glutes.
+const ALL_MUSCLES = [
+  "chest",
+  "back",
+  "shoulders",
+  "quads",
+  "hamstrings",
+  "glutes",
+  "biceps",
+  "triceps",
+  "forearms",
+  "core",
+  "calves",
 ];
-const ALL_MUSCLES = MUSCLE_GROUPS.flatMap((g) => g.muscles);
 
 // Narrow a stored muscle string to a known region (or null if unrecognized).
 function asRegion(m: string | null | undefined): MuscleRegion | null {
@@ -63,8 +71,8 @@ export default function ExerciseLibraryScreen() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  // All muscle sections start minimized — tap a section to expand it.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set(ALL_MUSCLES));
+  // null = category-card grid; a muscle name = drilled into that category.
+  const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
   const [detail, setDetail] = useState<Exercise | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -149,14 +157,6 @@ export default function ExerciseLibraryScreen() {
     return map;
   }, [visible]);
 
-  const toggleSection = (muscle: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(muscle)) next.delete(muscle);
-      else next.add(muscle);
-      return next;
-    });
-
   const openAdd = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
@@ -236,40 +236,57 @@ export default function ExerciseLibraryScreen() {
             ) : (
               searchResults.map((e) => <Row key={e.id} e={e} />)
             )
-          ) : (
-            MUSCLE_GROUPS.map((group) => {
-              const groupHasAny = group.muscles.some((m) => (byMuscle.get(m)?.length ?? 0) > 0);
-              if (!groupHasAny) return null;
-              return (
-                <View key={group.title} style={styles.superGroup}>
-                  <Text style={styles.superGroupTitle}>{group.title}</Text>
-                  {group.muscles.map((muscle) => {
-                    const items = byMuscle.get(muscle) ?? [];
-                    if (items.length === 0) return null;
-                    const isCollapsed = collapsed.has(muscle);
-                    return (
-                      <View key={muscle} style={styles.section}>
-                        <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection(muscle)}>
-                          <Text style={styles.sectionTitle}>
-                            {muscle} <Text style={styles.sectionCount}>({items.length})</Text>
-                          </Text>
-                          <Text style={styles.sectionChevron}>{isCollapsed ? "▸" : "▾"}</Text>
-                        </TouchableOpacity>
-                        {!isCollapsed && items.map((e) => <Row key={e.id} e={e} />)}
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            })
-          )}
-          {/* Uncategorized (no muscle group) */}
-          {!searchResults && (byMuscle.get("other")?.length ?? 0) > 0 && (
-            <View style={styles.superGroup}>
-              <Text style={styles.superGroupTitle}>Other</Text>
-              {byMuscle.get("other")!.map((e) => (
+          ) : selectedMuscle !== null ? (
+            /* Drilled into one category — back link + exercise list */
+            <>
+              <TouchableOpacity style={styles.backRow} onPress={() => setSelectedMuscle(null)}>
+                <Text style={styles.backRowText}>‹ All muscle groups</Text>
+              </TouchableOpacity>
+              <Text style={styles.categoryTitle}>
+                {selectedMuscle === "other" ? "Other" : MUSCLE_LABELS[asRegion(selectedMuscle)!]}{" "}
+                <Text style={styles.sectionCount}>
+                  ({(byMuscle.get(selectedMuscle) ?? []).length} exercises)
+                </Text>
+              </Text>
+              {(byMuscle.get(selectedMuscle) ?? []).map((e) => (
                 <Row key={e.id} e={e} />
               ))}
+            </>
+          ) : (
+            /* Category-card grid — one card per muscle group */
+            <View style={styles.cardGrid}>
+              {ALL_MUSCLES.map((muscle) => {
+                const count = byMuscle.get(muscle)?.length ?? 0;
+                if (count === 0) return null;
+                return (
+                  <TouchableOpacity
+                    key={muscle}
+                    style={styles.categoryCard}
+                    onPress={() => setSelectedMuscle(muscle)}
+                    activeOpacity={0.75}
+                  >
+                    <MuscleThumb muscle={asRegion(muscle)!} width={40} />
+                    <View style={styles.categoryCardText}>
+                      <Text style={styles.categoryCardName}>{MUSCLE_LABELS[asRegion(muscle)!]}</Text>
+                      <Text style={styles.categoryCardCount}>{count} exercises</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              {(byMuscle.get("other")?.length ?? 0) > 0 && (
+                <TouchableOpacity
+                  style={styles.categoryCard}
+                  onPress={() => setSelectedMuscle("other")}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.categoryCardText}>
+                    <Text style={styles.categoryCardName}>Other</Text>
+                    <Text style={styles.categoryCardCount}>
+                      {byMuscle.get("other")!.length} exercises
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </ScrollView>
@@ -310,6 +327,7 @@ export default function ExerciseLibraryScreen() {
               <View style={styles.detailRows}>
                 <DetailRow label="Equipment" value={detail.equipment ?? "—"} />
                 <DetailRow label="Type" value={detail.exercise_type ?? "—"} />
+                <DetailRow label="Level" value={detail.level ?? "—"} />
               </View>
 
               {detail.tracks_height && (
@@ -319,23 +337,31 @@ export default function ExerciseLibraryScreen() {
                 </View>
               )}
 
-              {/* Video / demo */}
+              {/* Demo photos (start/end position) or upload placeholder */}
               <View style={styles.demoSection}>
                 <Text style={styles.sectionHeading}>Demo</Text>
-                <View style={styles.demoPlaceholder}>
-                  <Text style={styles.demoIcon}>🎬</Text>
-                  <Text style={styles.demoPlaceholderText}>No demo video yet</Text>
-                  {detail.is_custom && (
-                    <TouchableOpacity
-                      style={styles.uploadBtn}
-                      onPress={() =>
-                        Alert.alert("Upload demo", "Video upload is coming in a future release.")
-                      }
-                    >
-                      <Text style={styles.uploadBtnText}>Upload demo video</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                {detail.images?.length ? (
+                  <View style={styles.demoImages}>
+                    {detail.images.slice(0, 2).map((uri, i) => (
+                      <Image key={uri} source={{ uri }} style={styles.demoImage} resizeMode="cover" />
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.demoPlaceholder}>
+                    <Text style={styles.demoIcon}>🎬</Text>
+                    <Text style={styles.demoPlaceholderText}>No demo media yet</Text>
+                    {detail.is_custom && (
+                      <TouchableOpacity
+                        style={styles.uploadBtn}
+                        onPress={() =>
+                          Alert.alert("Upload demo", "Video upload is coming in a future release.")
+                        }
+                      >
+                        <Text style={styles.uploadBtnText}>Upload demo video</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
               </View>
 
               {/* How to perform — numbered steps */}
@@ -532,28 +558,26 @@ const styles = StyleSheet.create({
   favChipActive: { backgroundColor: colors.accent },
   favChipText: { fontSize: font.xs, fontWeight: "600", color: colors.muted },
   content: { padding: spacing.base, gap: spacing.md, paddingBottom: 48 },
-  superGroup: { gap: spacing.sm },
-  superGroupTitle: {
-    fontSize: font.md,
-    fontWeight: "700",
-    color: colors.white,
-    marginTop: spacing.xs,
-  },
-  section: { gap: spacing.xs },
-  sectionHeader: {
+  cardGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  categoryCard: {
+    width: "48%",
+    flexGrow: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: spacing.xs,
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
   },
-  sectionTitle: {
-    fontSize: font.sm,
-    fontWeight: "700",
-    color: colors.muted,
-    textTransform: "capitalize",
-  },
-  sectionCount: { fontWeight: "400" },
-  sectionChevron: { color: colors.muted, fontSize: font.sm },
+  categoryCardText: { flex: 1, gap: 2 },
+  categoryCardName: { fontSize: font.base, fontWeight: "700", color: colors.white },
+  categoryCardCount: { fontSize: font.xs, color: colors.muted },
+  backRow: { paddingVertical: spacing.xs },
+  backRowText: { fontSize: font.sm, fontWeight: "600", color: colors.accent },
+  categoryTitle: { fontSize: font.lg, fontWeight: "700", color: colors.white },
+  sectionCount: { fontWeight: "400", fontSize: font.sm, color: colors.muted },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -608,6 +632,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   demoSection: {},
+  demoImages: { flexDirection: "row", gap: spacing.sm },
+  demoImage: {
+    flex: 1,
+    aspectRatio: 4 / 3,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#fff", // source photos are on white backgrounds
+  },
   demoPlaceholder: {
     backgroundColor: colors.bg,
     borderRadius: radius.md,

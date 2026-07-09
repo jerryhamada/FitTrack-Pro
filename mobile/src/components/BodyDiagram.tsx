@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Ellipse, Path, Rect } from "react-native-svg";
 import { colors, font, spacing } from "../theme";
-import type { MuscleRegion } from "../lib/muscles";
+import { REGION_VIEW, type MuscleRegion } from "../lib/muscles";
 
 interface BodyDiagramProps {
   primary: MuscleRegion | null;
@@ -94,22 +94,23 @@ function strokeFor(e: Emphasis): string | undefined {
   return e === "secondary" ? colors.accent : undefined;
 }
 
-function Figure({
+function FigureSvg({
   shapes,
   primary,
   secondary,
-  label,
+  width = 120,
+  height = 264,
 }: {
   shapes: Partial<Record<MuscleRegion, Shape[]>>;
   primary: MuscleRegion | null;
   secondary: MuscleRegion[];
-  label: string;
+  width?: number;
+  height?: number;
 }) {
   // Silhouette outline — a clean, generic humanoid built from soft shapes so the
   // muscle overlays read clearly on top. Muted, no internal clutter.
   return (
-    <View style={styles.figure}>
-      <Svg width={120} height={264} viewBox="0 0 100 240">
+    <Svg width={width} height={height} viewBox="0 0 100 240">
         {/* base body */}
         <Circle cx={50} cy={22} r={12} fill={BASE} />
         <Rect x={40} y={34} width={20} height={8} rx={3} fill={BASE} />
@@ -161,9 +162,42 @@ function Figure({
             )
           );
         })}
-      </Svg>
+    </Svg>
+  );
+}
+
+function Figure({
+  shapes,
+  primary,
+  secondary,
+  label,
+}: {
+  shapes: Partial<Record<MuscleRegion, Shape[]>>;
+  primary: MuscleRegion | null;
+  secondary: MuscleRegion[];
+  label: string;
+}) {
+  return (
+    <View style={styles.figure}>
+      <FigureSvg shapes={shapes} primary={primary} secondary={secondary} />
       <Text style={styles.figureLabel}>{label}</Text>
     </View>
+  );
+}
+
+/** Compact single-figure thumbnail highlighting one muscle — used on the
+ * Exercise Library category cards. Picks whichever silhouette view (front/back)
+ * shows the region best. */
+export function MuscleThumb({ muscle, width = 44 }: { muscle: MuscleRegion; width?: number }) {
+  const view = REGION_VIEW[muscle]?.[0] ?? "front";
+  return (
+    <FigureSvg
+      shapes={view === "front" ? FRONT : BACK}
+      primary={muscle}
+      secondary={[]}
+      width={width}
+      height={width * 2.2}
+    />
   );
 }
 

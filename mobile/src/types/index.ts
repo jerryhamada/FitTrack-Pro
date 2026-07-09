@@ -99,6 +99,8 @@ export interface Exercise {
   equipment: string | null;
   exercise_type: "compound" | "isolation" | null;
   demo_media_url: string | null;
+  images: string[] | null;
+  level: "beginner" | "intermediate" | "expert" | null;
   instructions_steps: string[] | null;
   tracks_height: boolean;
   invert_difficulty: boolean;
