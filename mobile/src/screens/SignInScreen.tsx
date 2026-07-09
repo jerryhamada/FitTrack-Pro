@@ -1,7 +1,7 @@
 import { useSignIn } from "@clerk/clerk-expo";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,6 +16,7 @@ import Btn from "../components/Btn";
 import Input from "../components/Input";
 import OAuthButtons from "../components/OAuthButtons";
 import { clerkErrorMessage } from "../lib/clerkError";
+import { getWelcomeName } from "../lib/welcomeName";
 import type { AuthStackParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
 
@@ -27,6 +28,11 @@ export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [welcomeName, setWelcomeNameState] = useState<string | null>(null);
+
+  useEffect(() => {
+    getWelcomeName().then(setWelcomeNameState);
+  }, []);
 
   async function handleSignIn() {
     if (!isLoaded) return;
@@ -55,11 +61,13 @@ export default function SignInScreen() {
           <Text style={styles.logoText}>
             FitTrack <Text style={styles.logoAccent}>Pro</Text>
           </Text>
-          <Text style={styles.logoSub}>Trainer app</Text>
+          <Text style={styles.logoSub}>
+            {welcomeName ? `Welcome back, ${welcomeName.split(/\s+/)[0]}` : "Trainer app"}
+          </Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.title}>Sign in</Text>
+          <Text style={styles.title}>{welcomeName ? "Welcome back" : "Sign in"}</Text>
           <Input
             label="Email"
             value={email}

@@ -20,6 +20,7 @@ import { parseInviteToken, usePendingInvite } from "../contexts/PendingInvite";
 import { useSignupRole } from "../contexts/SignupRole";
 import { api } from "../lib/api";
 import { clerkErrorMessage } from "../lib/clerkError";
+import { setWelcomeName } from "../lib/welcomeName";
 import type { AuthStackParamList } from "../navigation/types";
 import { colors, font, radius, spacing } from "../theme";
 
@@ -34,6 +35,7 @@ export default function SignUpScreen() {
   // An invite always means a client account; otherwise the Role Selection choice
   // decides (defaulting to trainer for logins that skipped it, e.g. deep links).
   const role = inviteToken ? "client" : route.params?.role ?? chosenRole ?? "trainer";
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -75,9 +77,20 @@ export default function SignUpScreen() {
 
   async function handleSignUp() {
     if (!isLoaded) return;
+    if (role === "trainer" && !fullName.trim()) {
+      Alert.alert("Name required", "Enter your name — it's how clients find and recognize you.");
+      return;
+    }
     setLoading(true);
     try {
-      await signUp.create({ emailAddress: email, password });
+      // Clerk stores first/last separately; the backend mirrors the combined
+      // `name` claim from the session JWT into users.name on first sign-in.
+      const [firstName, ...rest] = fullName.trim().split(/\s+/);
+      await signUp.create({
+        emailAddress: email,
+        password,
+        ...(firstName ? { firstName, lastName: rest.join(" ") || undefined } : {}),
+      });
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       setStage("verify");
     } catch (err: unknown) {
@@ -93,6 +106,7 @@ export default function SignUpScreen() {
     try {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === "complete") {
+        await setWelcomeName(fullName); // remembered for the sign-in greeting
         await setActive({ session: result.createdSessionId });
       } else {
         Alert.alert("Verification failed", "Check the code and try again.");
@@ -144,6 +158,17 @@ export default function SignUpScreen() {
           {stage === "form" ? (
             <>
               <Text style={styles.title}>Create account</Text>
+              {role === "trainer" && (
+                <Input
+                  label="Your name"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  placeholder="Alex Rivera"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  autoComplete="name"
+                />
+              )}
               <Input
                 label="Email"
                 value={email}

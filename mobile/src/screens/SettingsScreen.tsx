@@ -1,7 +1,7 @@
 import { useClerk } from "@clerk/clerk-expo";
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, Clipboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Btn from "../components/Btn";
 import Input from "../components/Input";
 import Spinner from "../components/Spinner";
@@ -12,6 +12,7 @@ import { colors, font, radius, spacing } from "../theme";
 
 export default function SettingsScreen() {
   const { signOut } = useClerk();
+  const qc = useQueryClient();
   const { override, setOverride, clearOverride } = useRoleOverride();
   const { data: trainer, isLoading } = useQuery({
     queryKey: ["trainer-me"],
@@ -21,6 +22,18 @@ export default function SettingsScreen() {
     queryKey: ["subscription"],
     queryFn: api.trainer.subscription,
   });
+
+  // Same cache key as AddClientScreen so the code stays in sync between screens.
+  const { data: joinCode } = useQuery({
+    queryKey: ["trainer", "join-code"],
+    queryFn: api.trainer.joinCode,
+  });
+  const generateCode = useMutation({
+    mutationFn: api.trainer.generateJoinCode,
+    onSuccess: (res) => qc.setQueryData(["trainer", "join-code"], res),
+    onError: (err) => Alert.alert("Error", (err as Error).message),
+  });
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const [businessName, setBusinessName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -82,6 +95,53 @@ export default function SettingsScreen() {
           </Text>
         </View>
       )}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Your trainer code</Text>
+        <Text style={styles.sectionHint}>
+          Share this code with clients — they enter it when signing up (or later in their app) to
+          get matched to you as their trainer.
+        </Text>
+        {joinCode?.code ? (
+          <>
+            <Text style={styles.code} selectable>
+              {joinCode.code}
+            </Text>
+            <TouchableOpacity
+              style={styles.copyBtn}
+              onPress={() => {
+                Clipboard.setString(joinCode.code!);
+                setCodeCopied(true);
+                setTimeout(() => setCodeCopied(false), 1500);
+              }}
+            >
+              <Text style={styles.copyBtnText}>{codeCopied ? "Copied!" : "Copy code"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                Alert.alert(
+                  "Generate a new code?",
+                  "Your current code stops working immediately — anyone still holding it won't be able to join.",
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Generate new code", onPress: () => generateCode.mutate() },
+                  ]
+                )
+              }
+              disabled={generateCode.isPending}
+            >
+              <Text style={styles.regenerate}>Generate a new code</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <Btn
+            label={generateCode.isPending ? "Creating..." : "Create my code"}
+            onPress={() => generateCode.mutate()}
+            loading={generateCode.isPending}
+            fullWidth
+          />
+        )}
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Branding</Text>
@@ -218,6 +278,23 @@ const styles = StyleSheet.create({
   unitBtnText: { fontWeight: "600", fontSize: font.sm, color: colors.muted },
   unitBtnTextActive: { color: "#000" },
   subscriptionStatus: { fontSize: font.sm, color: colors.white },
+  code: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.accent,
+    letterSpacing: 6,
+    textAlign: "center",
+    fontFamily: "monospace",
+    paddingVertical: spacing.sm,
+  },
+  copyBtn: {
+    backgroundColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    alignItems: "center",
+  },
+  copyBtnText: { color: colors.white, fontWeight: "600", fontSize: font.sm },
+  regenerate: { fontSize: font.sm, color: colors.muted, textAlign: "center", textDecorationLine: "underline" },
   divider: { height: 1, backgroundColor: colors.border },
   devSection: { borderColor: "#3b82f6" + "60", borderStyle: "dashed" },
   devSectionTitle: { fontSize: font.base, fontWeight: "600", color: "#3b82f6" },
