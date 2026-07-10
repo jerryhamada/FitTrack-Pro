@@ -1,3 +1,4 @@
+import type { MeasurementType } from "../types";
 import type {
   ActiveSession,
   ActivityEvent,
@@ -223,6 +224,8 @@ export const api = {
     update: (id: number, body: Partial<Exercise>): Promise<Exercise> =>
       req<Exercise>(`/exercises/${id}`, jsonBody("PUT", body)),
     delete: (id: number): Promise<void> => req(`/exercises/${id}`, { method: "DELETE" }),
+    setMeasurement: (id: number, measurementType: MeasurementType): Promise<Exercise> =>
+      req<Exercise>(`/exercises/${id}/measurement`, jsonBody("PUT", { measurement_type: measurementType })),
     favorite: (id: number): Promise<void> => req(`/exercises/${id}/favorite`, { method: "POST" }),
     unfavorite: (id: number): Promise<void> => req(`/exercises/${id}/favorite`, { method: "DELETE" }),
   },
@@ -323,6 +326,10 @@ export const api = {
       req<LinkRequest>("/client-portal/link-requests", jsonBody("POST", { trainer_id: trainerId })),
     joinByCode: (code: string): Promise<JoinByCodeResponse> =>
       req<JoinByCodeResponse>("/client-portal/join-by-code", jsonBody("POST", { code })),
+    joinCodePreview: (
+      code: string
+    ): Promise<{ trainer_name: string | null; trainer_business: string | null }> =>
+      req(`/client-portal/join-codes/${encodeURIComponent(code)}`),
   },
 
   auth: {

@@ -2,7 +2,7 @@ import { ClerkLoaded, ClerkProvider, useAuth } from "@clerk/clerk-expo";
 import { tokenCache } from "@clerk/clerk-expo/token-cache";
 import { NavigationContainer } from "@react-navigation/native";
 import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Alert, StatusBar } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PendingInviteProvider } from "./src/contexts/PendingInvite";
@@ -44,10 +44,24 @@ const NAV_THEME = {
 };
 
 function AuthSync() {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
+  const prevUserId = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     setTokenGetter(() => getToken());
   }, [getToken]);
+
+  // Drop ALL cached server state whenever the signed-in identity changes
+  // (sign-out or a different login). Queries like whoami cache with
+  // staleTime: Infinity, so without this a fresh client signup would read the
+  // previous account's cached role, render the trainer app, and get
+  // auto-provisioned as a trainer by its first API call.
+  useEffect(() => {
+    const prev = prevUserId.current;
+    prevUserId.current = userId ?? null;
+    if (prev !== undefined && prev !== (userId ?? null)) qc.clear();
+  }, [userId]);
+
   return null;
 }
 

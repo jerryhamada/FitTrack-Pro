@@ -52,6 +52,15 @@ class JoinByCodeRequest(BaseModel):
     code: str
 
 
+class JoinCodePreviewOut(BaseModel):
+    """Pre-signup peek at a trainer join code so the signup screen can show who
+    the client is about to join — same trust model as the invite preview (holding
+    the code is the authorization)."""
+
+    trainer_name: str | None
+    trainer_business: str | None
+
+
 class JoinByCodeResponse(BaseModel):
     trainer_id: int
     trainer_name: str | None
@@ -163,6 +172,7 @@ class PortalHistorySet(BaseModel):
     weight_unit: str | None
     height: float | None = None  # for height-tracked exercises (box jumps, box push-ups)
     height_unit: str | None = None
+    band_color: str | None = None  # for band-measured exercises
     reps: int | None
     effort_value: float | None
     effort_type: str | None

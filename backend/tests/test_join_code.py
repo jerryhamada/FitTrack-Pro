@@ -60,6 +60,31 @@ class TestGenerateJoinCode:
         assert profile.join_code == new
 
 
+class TestJoinCodePreview:
+    """Unauthenticated pre-signup peek: GET /client-portal/join-codes/{code}."""
+
+    def _code(self, db, trainer) -> str:
+        profile = db.query(TrainerProfile).filter(TrainerProfile.user_id == trainer.id).one()
+        profile.join_code = "ABC234"
+        profile.business_name = "Test Gym"
+        db.flush()
+        return "ABC234"
+
+    def test_valid_code_returns_trainer(self, solo_api, db, trainer):
+        code = self._code(db, trainer)
+        res = solo_api.get(f"/client-portal/join-codes/{code}")
+        assert res.status_code == 200, res.text
+        assert res.json() == {"trainer_name": "Test Trainer", "trainer_business": "Test Gym"}
+
+    def test_case_insensitive(self, solo_api, db, trainer):
+        code = self._code(db, trainer)
+        assert solo_api.get(f"/client-portal/join-codes/{code.lower()}").status_code == 200
+
+    def test_unknown_code_404(self, solo_api, db, trainer):
+        self._code(db, trainer)
+        assert solo_api.get("/client-portal/join-codes/WRONG9").status_code == 404
+
+
 class TestJoinByCode:
     def _code(self, solo_api, db, trainer) -> str:
         profile = db.query(TrainerProfile).filter(TrainerProfile.user_id == trainer.id).one()

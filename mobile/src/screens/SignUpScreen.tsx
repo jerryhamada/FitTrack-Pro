@@ -16,7 +16,7 @@ import {
 import Btn from "../components/Btn";
 import Input from "../components/Input";
 import OAuthButtons from "../components/OAuthButtons";
-import { parseInviteToken, usePendingInvite } from "../contexts/PendingInvite";
+import { parseSignupCode, usePendingInvite } from "../contexts/PendingInvite";
 import { useSignupRole } from "../contexts/SignupRole";
 import { api } from "../lib/api";
 import { clerkErrorMessage } from "../lib/clerkError";
@@ -30,11 +30,20 @@ export default function SignUpScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<RouteProp<AuthStackParamList, "SignUp">>();
   const { signUp, setActive, isLoaded } = useSignUp();
-  const { token: inviteToken, setToken: setInviteToken, clearToken } = usePendingInvite();
+  const {
+    token: inviteToken,
+    setToken: setInviteToken,
+    clearToken,
+    joinCode,
+    setJoinCode,
+    clearJoinCode,
+  } = usePendingInvite();
   const { role: chosenRole } = useSignupRole();
-  // An invite always means a client account; otherwise the Role Selection choice
-  // decides (defaulting to trainer for logins that skipped it, e.g. deep links).
-  const role = inviteToken ? "client" : route.params?.role ?? chosenRole ?? "trainer";
+  // An invite or a trainer join code always means a client account; otherwise the
+  // Role Selection choice decides (defaulting to trainer for logins that skipped
+  // it, e.g. deep links).
+  const role =
+    inviteToken || joinCode ? "client" : route.params?.role ?? chosenRole ?? "trainer";
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,6 +63,16 @@ export default function SignUpScreen() {
     staleTime: Infinity,
   });
 
+  // Same up-front validation for a trainer join code: a typo'd code fails here
+  // with the trainer lookup, not after the account is created.
+  const { data: joinPreview, error: joinError } = useQuery({
+    queryKey: ["join-code-preview", joinCode],
+    queryFn: () => api.clientPortal.joinCodePreview(joinCode!),
+    enabled: joinCode !== null,
+    retry: false,
+    staleTime: Infinity,
+  });
+
   // Prefill + lock the email from the invite so the client signs up with the
   // address their trainer used to invite them. Locked only while the token is
   // valid and carried an email; otherwise the field stays editable.
@@ -65,12 +84,16 @@ export default function SignUpScreen() {
   }, [lockedEmail]);
 
   function handleInviteSubmit() {
-    const parsed = parseInviteToken(inviteInput);
+    const parsed = parseSignupCode(inviteInput);
     if (!parsed) {
-      Alert.alert("Invalid invite", "That doesn't look like an invite link or code — check it and try again.");
+      Alert.alert(
+        "Invalid invite or code",
+        "That doesn't look like an invite link or a trainer code — check it and try again."
+      );
       return;
     }
-    setInviteToken(parsed);
+    if (parsed.kind === "invite") setInviteToken(parsed.token);
+    else setJoinCode(parsed.code);
     setInviteInputOpen(false);
     setInviteInput("");
   }
@@ -154,6 +177,34 @@ export default function SignUpScreen() {
           </View>
         )}
 
+        {joinCode && !inviteToken && (
+          <View style={[styles.inviteBanner, !!joinError && styles.inviteBannerError]}>
+            {joinError ? (
+              <>
+                <Text style={styles.inviteBannerError_text}>
+                  {(joinError as Error).message || "That code doesn't match any trainer."}
+                </Text>
+                <TouchableOpacity onPress={clearJoinCode}>
+                  <Text style={styles.inviteBannerDismiss}>Remove the code and try another</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.inviteBannerText}>
+                  {joinPreview
+                    ? `You'll join ${joinPreview.trainer_name ?? "your trainer"}${
+                        joinPreview.trainer_business ? ` (${joinPreview.trainer_business})` : ""
+                      } as a client.`
+                    : `Checking code ${joinCode}...`}
+                </Text>
+                <TouchableOpacity onPress={clearJoinCode}>
+                  <Text style={styles.inviteBannerDismiss}>Remove code</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         <View style={styles.card}>
           {stage === "form" ? (
             <>
@@ -231,24 +282,27 @@ export default function SignUpScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Fallback entry for clients whose invite link didn't open the app */}
+        {/* Fallback entry for clients whose invite link didn't open the app, or
+            who only have their trainer's short join code */}
         {!inviteToken &&
+          !joinCode &&
           (inviteInputOpen ? (
             <View style={styles.inviteEntry}>
               <Input
-                label="Invite link or code"
+                label="Invite link or trainer code"
                 value={inviteInput}
                 onChangeText={setInviteInput}
-                placeholder="Paste your invite link here"
-                autoCapitalize="none"
+                placeholder="Invite link or code like AB2CD4"
+                autoCapitalize="characters"
                 autoCorrect={false}
               />
-              <Btn label="Use invite" onPress={handleInviteSubmit} fullWidth />
+              <Btn label="Use it" onPress={handleInviteSubmit} fullWidth />
             </View>
           ) : (
             <TouchableOpacity onPress={() => setInviteInputOpen(true)} style={styles.switchBtn}>
               <Text style={styles.switchText}>
-                Joining as a client? <Text style={styles.switchLink}>Enter your invite link</Text>
+                Joining as a client?{" "}
+                <Text style={styles.switchLink}>Enter your invite link or trainer code</Text>
               </Text>
             </TouchableOpacity>
           ))}

@@ -13,6 +13,10 @@ import { Linking } from "react-native";
 
 // token_urlsafe(24) server-side — url-safe base64, no padding.
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
+// Trainer join code: 6 chars today (see backend JOIN_CODE_LENGTH), accept 4-10
+// alphanumerics so the shape can evolve. Length ranges keep the two disjoint
+// from invite tokens (16+), so one input field can accept either.
+const JOIN_CODE_RE = /^[A-Za-z0-9]{4,10}$/;
 
 export function parseInviteToken(input: string): string | null {
   const raw = input.trim();
@@ -27,20 +31,40 @@ export function parseInviteToken(input: string): string | null {
   return null;
 }
 
+/** Classify whatever the user pasted on the signup screen: an invite link/token
+ * or a short trainer join code. Both mean "this login becomes a client". */
+export function parseSignupCode(
+  input: string
+): { kind: "invite"; token: string } | { kind: "join"; code: string } | null {
+  const token = parseInviteToken(input);
+  if (token) return { kind: "invite", token };
+  const raw = input.trim();
+  if (JOIN_CODE_RE.test(raw)) return { kind: "join", code: raw.toUpperCase() };
+  return null;
+}
+
 interface PendingInviteState {
   token: string | null;
   setToken: (token: string) => void;
   clearToken: () => void;
+  /** Trainer join code captured at signup, redeemed right after auth. */
+  joinCode: string | null;
+  setJoinCode: (code: string) => void;
+  clearJoinCode: () => void;
 }
 
 const PendingInviteContext = createContext<PendingInviteState>({
   token: null,
   setToken: () => {},
   clearToken: () => {},
+  joinCode: null,
+  setJoinCode: () => {},
+  clearJoinCode: () => {},
 });
 
 export function PendingInviteProvider({ children }: { children: ReactNode }) {
   const [token, setTokenState] = useState<string | null>(null);
+  const [joinCode, setJoinCodeState] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,9 +85,13 @@ export function PendingInviteProvider({ children }: { children: ReactNode }) {
 
   const setToken = useCallback((t: string) => setTokenState(t), []);
   const clearToken = useCallback(() => setTokenState(null), []);
+  const setJoinCode = useCallback((c: string) => setJoinCodeState(c.trim().toUpperCase()), []);
+  const clearJoinCode = useCallback(() => setJoinCodeState(null), []);
 
   return (
-    <PendingInviteContext.Provider value={{ token, setToken, clearToken }}>
+    <PendingInviteContext.Provider
+      value={{ token, setToken, clearToken, joinCode, setJoinCode, clearJoinCode }}
+    >
       {children}
     </PendingInviteContext.Provider>
   );

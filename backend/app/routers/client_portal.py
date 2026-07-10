@@ -44,6 +44,7 @@ from ..schemas.client_portal import (
     InviteRedeemResponse,
     JoinByCodeRequest,
     JoinByCodeResponse,
+    JoinCodePreviewOut,
     LinkRequestCreate,
     LinkRequestOut,
     PortalCurrentProgram,
@@ -334,6 +335,34 @@ def create_link_request(
     )
 
 
+def _trainer_by_join_code(code: str, db: Session) -> tuple[User, TrainerProfile] | None:
+    normalized = code.strip().upper()
+    if not normalized:
+        return None
+    profile = db.query(TrainerProfile).filter(TrainerProfile.join_code == normalized).first()
+    if profile is None:
+        return None
+    trainer = (
+        db.query(User).filter(User.id == profile.user_id, User.role == RoleEnum.trainer).first()
+    )
+    return (trainer, profile) if trainer is not None else None
+
+
+@router.get("/join-codes/{code}", response_model=JoinCodePreviewOut)
+def preview_join_code(code: str, db: Session = Depends(get_db)):
+    """Unauthenticated peek at a trainer join code (holding the code is the
+    authorization, same as an invite token) so the signup screen can confirm the
+    code and show who the client is about to join before an account exists."""
+    match = _trainer_by_join_code(code, db)
+    if match is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="That code doesn't match any trainer. Double-check it and try again.",
+        )
+    trainer, profile = match
+    return JoinCodePreviewOut(trainer_name=trainer.name, trainer_business=profile.business_name)
+
+
 @router.post("/join-by-code", response_model=JoinByCodeResponse)
 def join_by_code(
     body: JoinByCodeRequest,
@@ -346,17 +375,12 @@ def join_by_code(
     if client.trainer_id is not None:
         raise HTTPException(status_code=409, detail="You're already connected to a trainer.")
 
-    code = body.code.strip().upper()
-    if not code:
+    if not body.code.strip():
         raise HTTPException(status_code=422, detail="Enter a code")
-    profile = db.query(TrainerProfile).filter(TrainerProfile.join_code == code).first()
-    trainer = (
-        db.query(User).filter(User.id == profile.user_id, User.role == RoleEnum.trainer).first()
-        if profile
-        else None
-    )
-    if trainer is None:
+    match = _trainer_by_join_code(body.code, db)
+    if match is None:
         raise HTTPException(status_code=404, detail="That code doesn't match any trainer. Double-check it and try again.")
+    trainer, profile = match
 
     client.trainer_id = trainer.id
     now = datetime.now(timezone.utc)
@@ -769,6 +793,7 @@ def workout_detail(
                     weight_unit=st.weight_unit.value if st.weight_unit else None,
                     height=float(st.height) if st.height is not None else None,
                     height_unit=st.height_unit.value if st.height_unit else None,
+                    band_color=st.band_color,
                     reps=st.reps,
                     effort_value=float(st.effort_value) if st.effort_value is not None else None,
                     effort_type=st.effort_type.value if st.effort_type else None,

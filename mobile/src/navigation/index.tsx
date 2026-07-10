@@ -291,8 +291,8 @@ function FullScreenStatus({ children }: { children: React.ReactNode }) {
  * before landing on the client dashboard.
  */
 function SignedInRouter() {
-  const { token, clearToken } = usePendingInvite();
-  const { role: signupRole, clearRole } = useSignupRole();
+  const { token, clearToken, joinCode, clearJoinCode } = usePendingInvite();
+  const { role: signupRole, hydrated: roleHydrated, setRole, clearRole } = useSignupRole();
   const { signOut } = useAuth();
   const qc = useQueryClient();
 
@@ -317,8 +317,8 @@ function SignedInRouter() {
     if (token !== null && redeemStatus === "idle") redeemMutate();
   }, [token, redeemStatus, redeemMutate]);
 
-  // "I'm a Client" signup without an invite: provision the standalone client
-  // account, then re-resolve the role.
+  // "I'm a Client" signup without an invite (role choice or a pending trainer
+  // join code): provision the standalone client account, then re-resolve.
   const registerClient = useMutation({
     mutationFn: api.auth.registerClient,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["whoami"] }),
@@ -326,11 +326,55 @@ function SignedInRouter() {
   });
   const { mutate: registerMutate, status: registerStatus } = registerClient;
   const needsClientProvisioning =
-    token === null && signupRole === "client" && whoami.data !== undefined && whoami.data.role === null;
+    token === null &&
+    roleHydrated &&
+    (signupRole === "client" || joinCode !== null) &&
+    whoami.data !== undefined &&
+    whoami.data.role === null;
 
   useEffect(() => {
     if (needsClientProvisioning && registerStatus === "idle") registerMutate();
   }, [needsClientProvisioning, registerStatus, registerMutate]);
+
+  // Trainer join code captured at signup: once the login resolves as a client,
+  // link it to the trainer. Success and "already connected" both just clear the
+  // code; real failures surface with a retry / continue-without-it choice.
+  const joinByCode = useMutation({
+    mutationFn: () => api.clientPortal.joinByCode(joinCode!),
+    onSuccess: () => {
+      clearJoinCode();
+      qc.invalidateQueries({ queryKey: ["whoami"] });
+    },
+    meta: { skipGlobalToast: true },
+  });
+  const { mutate: joinMutate, status: joinStatus } = joinByCode;
+  const needsJoinByCode =
+    token === null &&
+    joinCode !== null &&
+    whoami.data !== undefined &&
+    whoami.data.role === "client" &&
+    whoami.data.trainer_link_status !== "linked";
+
+  useEffect(() => {
+    if (needsJoinByCode && joinStatus === "idle") joinMutate();
+  }, [needsJoinByCode, joinStatus, joinMutate]);
+
+  // A join code makes no sense for a resolved trainer login — drop it so the
+  // trainer app renders instead of a stuck linking state.
+  useEffect(() => {
+    if (joinCode !== null && whoami.data?.role === "trainer") clearJoinCode();
+  }, [joinCode, whoami.data?.role, clearJoinCode]);
+
+  // Once the account's role is settled, drop the persisted signup choice so a
+  // stale value can never steer a future login. ("client" is kept while the
+  // Find Your Trainer step still needs it.)
+  const resolvedRole = whoami.data?.role;
+  const linkStatus = whoami.data?.role === "client" ? whoami.data.trainer_link_status : undefined;
+  useEffect(() => {
+    if (signupRole === null) return;
+    if (resolvedRole === "trainer") clearRole();
+    if (resolvedRole === "client" && linkStatus !== "none") clearRole();
+  }, [signupRole, resolvedRole, linkStatus, clearRole]);
 
   if (token !== null) {
     if (redeem.isError) {
@@ -372,10 +416,41 @@ function SignedInRouter() {
       </FullScreenStatus>
     );
   }
-  if (whoami.data === undefined) {
+  // Don't make any role decision until both the backend's answer AND the
+  // persisted signup choice are in — deciding early is how a brand-new client
+  // login used to fall into the trainer app.
+  if (whoami.data === undefined || !roleHydrated) {
     return (
       <FullScreenStatus>
         <ActivityIndicator color={colors.accent} />
+      </FullScreenStatus>
+    );
+  }
+
+  if (needsJoinByCode) {
+    if (joinByCode.isError) {
+      return (
+        <FullScreenStatus>
+          <Text style={styles.statusTitle}>Couldn't join with this code</Text>
+          <Text style={styles.statusMessage}>{(joinByCode.error as Error).message}</Text>
+          <TouchableOpacity style={styles.statusBtn} onPress={() => joinByCode.reset()}>
+            <Text style={styles.statusBtnText}>Try again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              joinByCode.reset();
+              clearJoinCode();
+            }}
+          >
+            <Text style={styles.statusLink}>Continue without the code</Text>
+          </TouchableOpacity>
+        </FullScreenStatus>
+      );
+    }
+    return (
+      <FullScreenStatus>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.statusMessage}>Linking you to your trainer...</Text>
       </FullScreenStatus>
     );
   }
@@ -412,7 +487,31 @@ function SignedInRouter() {
     return <ClientTabs includeAccount />;
   }
 
-  // role "trainer" → trainer app; role null → brand-new trainer signup (the
+  // role null with NO recorded choice: never silently default to trainer — the
+  // trainer app's first API call would permanently provision this login as a
+  // trainer. Ask explicitly instead (covers OAuth signups from the Sign In
+  // screen and sessions restored after the app was killed mid-signup).
+  if (whoami.data.role === null && signupRole !== "trainer") {
+    return (
+      <FullScreenStatus>
+        <Text style={styles.statusTitle}>How will you use FitTrack Pro?</Text>
+        <Text style={styles.statusMessage}>
+          Tell us which side of the app this account is for — this only needs to happen once.
+        </Text>
+        <TouchableOpacity style={styles.statusBtn} onPress={() => setRole("trainer")}>
+          <Text style={styles.statusBtnText}>I'm a Trainer</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statusBtn} onPress={() => setRole("client")}>
+          <Text style={styles.statusBtnText}>I'm a Client</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => signOut()}>
+          <Text style={styles.statusLink}>Sign out</Text>
+        </TouchableOpacity>
+      </FullScreenStatus>
+    );
+  }
+
+  // role "trainer", or role null with an explicit "I'm a Trainer" choice (the
   // backend auto-provisions the trainer account on first trainer API call).
   return <AppNavigator />;
 }
