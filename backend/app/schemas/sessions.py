@@ -34,6 +34,7 @@ class SetCreate(BaseModel):
     weight_unit: UnitEnum | None = None
     height: float | None = None
     height_unit: DistanceUnitEnum | None = None
+    band_color: str | None = None
     is_per_side: bool = False
     reps: int | None = None
     effort_value: float | None = None
@@ -49,6 +50,7 @@ class SetUpdate(BaseModel):
     weight_unit: UnitEnum | None = None
     height: float | None = None
     height_unit: DistanceUnitEnum | None = None
+    band_color: str | None = None
     is_per_side: bool | None = None
     reps: int | None = None
     effort_value: float | None = None
@@ -72,6 +74,7 @@ class SetOut(BaseModel):
     weight_unit: UnitEnum | None
     height: float | None = None
     height_unit: DistanceUnitEnum | None = None
+    band_color: str | None = None
     is_per_side: bool
     reps: int | None
     # Stored Epley estimate in this set's weight_unit (per-hand for per-side sets).

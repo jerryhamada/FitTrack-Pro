@@ -10,7 +10,7 @@ import Spinner from "../components/Spinner";
 import BodyDiagram, { MuscleThumb } from "../components/BodyDiagram";
 import { api } from "../lib/api";
 import { MUSCLE_LABELS, MUSCLE_REGIONS, type MuscleRegion } from "../lib/muscles";
-import type { Exercise } from "../types";
+import type { Exercise, MeasurementType } from "../types";
 import { colors, font, radius, spacing } from "../theme";
 
 // Category browse order — legs deliberately split into quads / hamstrings / glutes.
@@ -43,13 +43,19 @@ function categoryForMuscle(muscle: string): string {
   return "Lower Body";
 }
 
+const MEASUREMENTS: { value: MeasurementType; label: string }[] = [
+  { value: "weight", label: "Weight (number)" },
+  { value: "height", label: "Height (number)" },
+  { value: "band", label: "Band color (text)" },
+];
+
 interface FormState {
   name: string;
   muscle_group: string | null;
   secondary_muscles: string[];
   equipment: string | null;
   exercise_type: "compound" | "isolation" | null;
-  tracks_height: boolean;
+  measurement_type: MeasurementType;
   invert_difficulty: boolean;
   steps: string; // one step per line; split into instructions_steps on save
   notes: string;
@@ -61,7 +67,7 @@ const EMPTY_FORM: FormState = {
   secondary_muscles: [],
   equipment: null,
   exercise_type: null,
-  tracks_height: false,
+  measurement_type: "weight",
   invert_difficulty: false,
   steps: "",
   notes: "",
@@ -100,8 +106,9 @@ export default function ExerciseLibraryScreen() {
         secondary_muscles: form.secondary_muscles.length > 0 ? form.secondary_muscles : null,
         equipment: form.equipment,
         exercise_type: form.exercise_type,
-        tracks_height: form.tracks_height,
-        invert_difficulty: form.tracks_height && form.invert_difficulty,
+        measurement_type: form.measurement_type,
+        tracks_height: form.measurement_type === "height",
+        invert_difficulty: form.measurement_type === "height" && form.invert_difficulty,
         instructions_steps: (() => {
           const steps = form.steps.split("\n").map((l) => l.trim()).filter(Boolean);
           return steps.length > 0 ? steps : null;
@@ -171,7 +178,7 @@ export default function ExerciseLibraryScreen() {
       secondary_muscles: e.secondary_muscles ?? [],
       equipment: e.equipment,
       exercise_type: e.exercise_type,
-      tracks_height: e.tracks_height,
+      measurement_type: e.measurement_type ?? (e.tracks_height ? "height" : "weight"),
       invert_difficulty: e.invert_difficulty,
       steps: (e.instructions_steps ?? []).join("\n"),
       notes: e.notes ?? "",
@@ -330,10 +337,14 @@ export default function ExerciseLibraryScreen() {
                 <DetailRow label="Level" value={detail.level ?? "—"} />
               </View>
 
-              {detail.tracks_height && (
+              {detail.measurement_type !== "weight" && (
                 <View style={styles.muscleTags}>
-                  <Pill tone="accent">Logs height</Pill>
-                  {detail.invert_difficulty && <Pill>Lower is better</Pill>}
+                  <Pill tone="accent">
+                    {detail.measurement_type === "height" ? "Logs height" : "Logs band color"}
+                  </Pill>
+                  {detail.measurement_type === "height" && detail.invert_difficulty && (
+                    <Pill>Lower is better</Pill>
+                  )}
                 </View>
               )}
 
@@ -475,18 +486,21 @@ export default function ExerciseLibraryScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-            <Text style={styles.fieldLabel}>Logging</Text>
+            <Text style={styles.fieldLabel}>Measured by</Text>
             <View style={styles.chipWrap}>
-              <TouchableOpacity
-                style={[styles.chip, form.tracks_height && styles.chipActive]}
-                onPress={() => setForm({ ...form, tracks_height: !form.tracks_height })}
-              >
-                <Text style={[styles.chipText, form.tracks_height && { color: "#000" }]}>
-                  Track by height instead of weight
-                </Text>
-              </TouchableOpacity>
+              {MEASUREMENTS.map((m) => (
+                <TouchableOpacity
+                  key={m.value}
+                  style={[styles.chip, form.measurement_type === m.value && styles.chipActive]}
+                  onPress={() => setForm({ ...form, measurement_type: m.value })}
+                >
+                  <Text style={[styles.chipText, form.measurement_type === m.value && { color: "#000" }]}>
+                    {m.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            {form.tracks_height && (
+            {form.measurement_type === "height" && (
               <View style={styles.chipWrap}>
                 <TouchableOpacity
                   style={[styles.chip, form.invert_difficulty && styles.chipActive]}

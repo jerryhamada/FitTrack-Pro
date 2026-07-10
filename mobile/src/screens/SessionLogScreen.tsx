@@ -20,7 +20,7 @@ import Spinner from "../components/Spinner";
 import { api, NetworkError } from "../lib/api";
 import { useSetWriteQueue } from "../lib/offlineSetQueue";
 import { formatHeight, formatWeight, toLbs } from "../lib/utils";
-import type { DistanceUnit, Exercise, PeakSet, SetEntry, SetStatus, Unit } from "../types";
+import type { DistanceUnit, Exercise, MeasurementType, PeakSet, SetEntry, SetStatus, Unit } from "../types";
 import type { RootStackParamList } from "../navigation/types";
 import { MUSCLE_REGIONS as MUSCLES } from "../lib/muscles";
 import { colors, font, radius, spacing } from "../theme";
@@ -189,6 +189,7 @@ export default function SessionLogScreen() {
         weight_unit: (p.body.weight_unit as SetEntry["weight_unit"]) ?? null,
         height: (p.body.height as number | undefined) ?? null,
         height_unit: (p.body.height_unit as SetEntry["height_unit"]) ?? null,
+        band_color: (p.body.band_color as string | undefined) ?? null,
         is_per_side: false,
         reps: (p.body.reps as number | undefined) ?? null,
         // Local Epley estimate so the peak strip stays live even before sync.
@@ -653,14 +654,45 @@ function ExerciseCard({
   highlighted,
   hideSetCount,
 }: ExerciseCardProps) {
-  const tracksHeight = exercise?.tracks_height ?? false;
+  const measurement: MeasurementType =
+    exercise?.measurement_type ?? (exercise?.tracks_height ? "height" : "weight");
+  const tracksHeight = measurement === "height";
   const [weight, setWeight] = useState("");
   const [height, setHeight] = useState("");
+  const [bandColor, setBandColor] = useState("");
   const [reps, setReps] = useState("");
   const [unit, setUnit] = useState<Unit>(defaultUnit);
   const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(defaultDistanceUnit);
   const [bodyweight, setBodyweight] = useState(false);
   const [expandedNoteSetId, setExpandedNoteSetId] = useState<number | null>(null);
+
+  // Mid-workout measurement change ("this one's actually banded") — persisted on
+  // the exercise (per-trainer override for built-ins), so the fix sticks for
+  // future workouts too. The exercises cache is patched in place so the inputs
+  // flip immediately.
+  const qc = useQueryClient();
+  const changeMeasurement = useMutation({
+    mutationFn: (m: MeasurementType) => api.exercises.setMeasurement(exerciseId, m),
+    onSuccess: (updated) => {
+      qc.setQueryData<Exercise[]>(["exercises"], (prev) =>
+        prev ? prev.map((e) => (e.id === updated.id ? updated : e)) : prev
+      );
+    },
+  });
+
+  function openMeasurementSettings() {
+    const mark = (m: MeasurementType) => (measurement === m ? "✓ " : "");
+    Alert.alert(
+      exercise?.name ?? "Exercise settings",
+      "How should sets be logged for this exercise?",
+      [
+        { text: `${mark("weight")}Weight (number)`, onPress: () => changeMeasurement.mutate("weight") },
+        { text: `${mark("height")}Height (number)`, onPress: () => changeMeasurement.mutate("height") },
+        { text: `${mark("band")}Band color (text)`, onPress: () => changeMeasurement.mutate("band") },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }
 
   const hasPr = sets.some((s) => s.is_pr);
 
@@ -688,6 +720,23 @@ function ExerciseCard({
   }, [insight?.peak, sets]);
 
   function submit() {
+    if (measurement === "band") {
+      if (!bandColor.trim()) {
+        Alert.alert("Enter a band color");
+        return;
+      }
+      if (!reps) {
+        Alert.alert("Enter reps");
+        return;
+      }
+      logSet({
+        exercise_id: exerciseId,
+        band_color: bandColor.trim(),
+        reps: Number(reps),
+        status: "completed",
+      });
+      return;
+    }
     if (tracksHeight) {
       if (!height) {
         Alert.alert("Enter a height");
@@ -767,13 +816,18 @@ function ExerciseCard({
           </View>
           {insight?.last3 && <Text style={cardStyles.last3}>Last 3: {insight.last3}</Text>}
         </View>
+        {!selectMode && (
+          <TouchableOpacity onPress={openMeasurementSettings} hitSlop={8} style={cardStyles.gearBtn}>
+            <Text style={cardStyles.gearIcon}>⚙︎</Text>
+          </TouchableOpacity>
+        )}
         {!selectMode && <Text style={cardStyles.chevron}>{expanded ? "▾" : "▸"}</Text>}
       </TouchableOpacity>
 
       {expanded && !selectMode && (
         <View style={cardStyles.body}>
           {/* Peak Set info strip — highest est. 1RM on record for this client+exercise */}
-          {!tracksHeight && (
+          {measurement === "weight" && (
             <View style={cardStyles.peakStrip}>
               {livePeak ? (
                 <>
@@ -803,11 +857,13 @@ function ExerciseCard({
               <View style={cardStyles.setRow}>
                 <Text style={cardStyles.setNum}>#{s.set_number}</Text>
                 <Text style={cardStyles.setValue}>
-                  {s.height != null
-                    ? formatHeight(s.height, s.height_unit)
-                    : s.weight != null
-                      ? formatWeight(s.weight, s.weight_unit)
-                      : "BW"}{" "}
+                  {s.band_color != null
+                    ? `${s.band_color} band`
+                    : s.height != null
+                      ? formatHeight(s.height, s.height_unit)
+                      : s.weight != null
+                        ? formatWeight(s.weight, s.weight_unit)
+                        : "BW"}{" "}
                   × {s.reps ?? "—"}
                   {s.effort_value ? `  ${s.effort_type?.toUpperCase()} ${s.effort_value}` : ""}
                 </Text>
@@ -833,7 +889,20 @@ function ExerciseCard({
           {/* Input row */}
           <View style={cardStyles.inputRow}>
             <View style={{ flex: 3 }}>
-              {tracksHeight ? (
+              {measurement === "band" ? (
+                <>
+                  <Text style={cardStyles.fieldLabel}>Band color</Text>
+                  <TextInput
+                    style={cardStyles.bandInput}
+                    value={bandColor}
+                    onChangeText={setBandColor}
+                    placeholder="red, green, black..."
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </>
+              ) : tracksHeight ? (
                 <>
                   <Text style={cardStyles.fieldLabel}>Height ({distanceUnit})</Text>
                   <View style={cardStyles.weightRow}>
@@ -1092,10 +1161,37 @@ function AddExerciseSheet({ visible, onClose, exercises, insightByExercise, onPi
 
   const showSections = !q && !muscle;
 
+  // Settings on each pick row: fix how an exercise is measured BEFORE adding it,
+  // so the right input (weight / height / band color) shows from the first set.
+  const qc = useQueryClient();
+  const changeMeasurement = useMutation({
+    mutationFn: (vars: { id: number; m: MeasurementType }) =>
+      api.exercises.setMeasurement(vars.id, vars.m),
+    onSuccess: (updated) => {
+      qc.setQueryData<Exercise[]>(["exercises"], (prev) =>
+        prev ? prev.map((e) => (e.id === updated.id ? updated : e)) : prev
+      );
+    },
+  });
+
+  function openMeasurementSettings(e: Exercise) {
+    const current = e.measurement_type ?? (e.tracks_height ? "height" : "weight");
+    const mark = (m: MeasurementType) => (current === m ? "✓ " : "");
+    Alert.alert(e.name, "How should sets be logged for this exercise?", [
+      { text: `${mark("weight")}Weight (number)`, onPress: () => changeMeasurement.mutate({ id: e.id, m: "weight" }) },
+      { text: `${mark("height")}Height (number)`, onPress: () => changeMeasurement.mutate({ id: e.id, m: "height" }) },
+      { text: `${mark("band")}Band color (text)`, onPress: () => changeMeasurement.mutate({ id: e.id, m: "band" }) },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }
+
   const Option = ({ e }: { e: Exercise }) => (
     <TouchableOpacity style={sheetStyles.option} onPress={() => onPick(e.id)}>
       <Text style={sheetStyles.optionText}>{e.name}</Text>
       {e.muscle_group && <Text style={sheetStyles.optionMuscle}>{e.muscle_group}</Text>}
+      <TouchableOpacity onPress={() => openMeasurementSettings(e)} hitSlop={8}>
+        <Text style={sheetStyles.optionGear}>⚙︎</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 
@@ -1369,6 +1465,18 @@ const cardStyles = StyleSheet.create({
   peakValue: { fontSize: font.sm, color: colors.accent, fontWeight: "700" },
   peakEmpty: { fontSize: font.sm, color: colors.accent, fontWeight: "600" },
   chevron: { fontSize: font.lg, color: colors.muted },
+  gearBtn: { paddingHorizontal: spacing.xs },
+  gearIcon: { fontSize: font.lg, color: colors.muted },
+  bandInput: {
+    height: 48,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.md,
+    color: colors.white,
+    fontSize: font.base,
+  },
   body: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -1481,5 +1589,6 @@ const sheetStyles = StyleSheet.create({
   },
   optionText: { fontSize: font.sm, color: colors.white, flex: 1 },
   optionMuscle: { fontSize: font.xs, color: colors.muted },
+  optionGear: { fontSize: font.base, color: colors.muted, paddingLeft: spacing.sm },
   empty: { fontSize: font.sm, color: colors.muted, padding: spacing.md },
 });

@@ -89,6 +89,8 @@ export interface ClientCreateResponse {
   invite: Invite;
 }
 
+export type MeasurementType = "weight" | "height" | "band";
+
 export interface Exercise {
   id: number;
   name: string;
@@ -102,6 +104,9 @@ export interface Exercise {
   images: string[] | null;
   level: "beginner" | "intermediate" | "expert" | null;
   instructions_steps: string[] | null;
+  /** How sets are logged: weight (number), height (number), or band (color text).
+   * Resolved per-trainer — overrides on built-ins are already applied. */
+  measurement_type: MeasurementType;
   tracks_height: boolean;
   invert_difficulty: boolean;
   notes: string | null;
@@ -197,6 +202,8 @@ export interface SetEntry {
   weight_unit: Unit | null;
   height: number | null;
   height_unit: DistanceUnit | null;
+  /** Resistance-band color for band-measured exercises; replaces weight/height. */
+  band_color: string | null;
   is_per_side: boolean;
   reps: number | null;
   /** Stored Epley estimate in this set's weight_unit (per-hand for per-side sets). */

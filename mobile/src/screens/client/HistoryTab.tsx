@@ -97,7 +97,7 @@ export default function HistoryTab({ client }: { client: Client }) {
                   {s.exercise_name}
                 </Text>
                 <Text style={styles.setValue}>
-                  {formatWeight(s.weight, s.weight_unit)}
+                  {s.band_color != null ? `${s.band_color} band` : formatWeight(s.weight, s.weight_unit)}
                   {s.reps != null ? ` × ${s.reps}` : ""}
                   {s.is_pr ? " 🏆" : ""}
                   {s.status !== "completed" ? ` (${s.status})` : ""}

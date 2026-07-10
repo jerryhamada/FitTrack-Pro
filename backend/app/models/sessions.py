@@ -73,6 +73,9 @@ class SetEntry(Base):
         Enum(DistanceUnitEnum, name="distance_unit_enum", values_callable=lambda e: [m.value for m in e]),
         nullable=True,
     )
+    # Resistance-band color for band-measured exercises ("red", "green", ...).
+    # Free text; populated instead of weight/height. Band sets never PR or e1RM.
+    band_color: Mapped[str | None] = mapped_column(String, nullable=True)
     is_per_side: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Estimated 1RM (Epley), stored at write time in this set's weight_unit and

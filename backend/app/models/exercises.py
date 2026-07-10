@@ -25,12 +25,32 @@ class Exercise(Base):
     level: Mapped[str | None] = mapped_column(String, nullable=True)  # beginner | intermediate | expert
     instructions_steps: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ordered "how to perform" steps
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # How sets are measured: "weight" (number) | "height" (number) | "band"
+    # (resistance-band color, free text). Generalizes tracks_height, which is kept
+    # in sync (= measurement_type == "height") for older app builds.
+    measurement_type: Mapped[str] = mapped_column(String, nullable=False, default="weight")
     tracks_height: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Only meaningful when tracks_height is set: a lower height is the harder/better
     # direction (e.g. box-assisted push-ups — less assistance is more impressive),
     # vs. the default where a higher number is always better (box jumps, weight, etc).
     invert_difficulty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExerciseSetting(Base):
+    """Per-trainer override of how a BUILT-IN exercise is measured. A trainer
+    flipping e.g. Glute Bridge to band-measured shouldn't change it for every
+    other trainer, so global rows are never mutated — overrides live here.
+    Custom (trainer-owned) exercises are edited directly and never need a row."""
+
+    __tablename__ = "exercise_settings"
+    __table_args__ = (UniqueConstraint("trainer_id", "exercise_id", name="uq_trainer_exercise_setting"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trainer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), nullable=False)
+    measurement_type: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
